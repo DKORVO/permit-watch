@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, send_from_directory, url_for
 
 bp = Blueprint("views", __name__)
 
@@ -16,7 +17,27 @@ def index():
             item["metadata"] = {}
         status = item.get("enrichment_status") or "awaiting"
         groups[status if status in groups else "awaiting"].append(item)
-    return render_template("index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(), address_counts=db.ottawa_address_counts())
+    assets_dir = Path(current_app.config["DATA_DIR"]) / "assets"
+    logo_filename = next(
+        (name for name in ("ottawa-logo.png", "ottawa-logo.svg", "ottawa-logo.webp") if (assets_dir / name).is_file()),
+        None,
+    )
+    return render_template(
+        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(),
+        address_counts=db.ottawa_address_counts(), logo_filename=logo_filename,
+    )
+
+
+@bp.get("/assets/<filename>")
+def persistent_asset(filename):
+    """Serve the administrator-provided dashboard logo from persistent data."""
+    allowed = {"ottawa-logo.png", "ottawa-logo.svg", "ottawa-logo.webp"}
+    if filename not in allowed:
+        abort(404)
+    assets_dir = Path(current_app.config["DATA_DIR"]) / "assets"
+    if not (assets_dir / filename).is_file():
+        abort(404)
+    return send_from_directory(assets_dir, filename, max_age=3600)
 
 @bp.post("/run-now")
 def run_now():
