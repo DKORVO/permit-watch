@@ -14,20 +14,24 @@ MERX_SOURCES = [
     {
         "name": "MERX — Ottawa opportunities",
         "url": "https://www.merx.com/public/solicitations/open?keywords=Ottawa",
-        "type": "html",
+        "type": "merx",
         "item_selector": "a.solicitation-link",
         "keywords": ["ottawa"],
         "enabled": True,
         "min_request_interval_seconds": 5,
+        "detail_lookup_limit": 25,
+        "detail_request_interval_seconds": 0.5,
     },
     {
         "name": "MERX — Gatineau opportunities",
         "url": "https://www.merx.com/public/solicitations/open?keywords=Gatineau",
-        "type": "html",
+        "type": "merx",
         "item_selector": "a.solicitation-link",
         "keywords": ["gatineau"],
         "enabled": True,
         "min_request_interval_seconds": 5,
+        "detail_lookup_limit": 25,
+        "detail_request_interval_seconds": 0.5,
     },
 ]
 
@@ -81,6 +85,61 @@ def html_items(source, session):
         link = node if node.name == "a" and node.get("href") else node.select_one(source.get("link_selector", "a[href]"))
         url = urljoin(source["url"], link["href"]) if link and link.get("href") else source["url"]
         yield {"title": title, "url": url, "published_text": select_text(node, source.get("date_selector")), "excerpt": clean(node.get_text(" ", strip=True))[:4000]}
+
+
+def merx_detail_fields(session, url):
+    """Read public basic fields that MERX omits from its search cards."""
+    response = session.get(url, timeout=(10, 45))
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    fields = {}
+    wanted = {
+        "issuing organization": "Issuing Organization",
+        "solicitation type": "Solicitation Type",
+        "publication date": "Publication",
+        "closing date": "Closing Date",
+    }
+    for node in soup.select(".mets-field"):
+        label_node = node.select_one(".mets-field-label")
+        value_node = node.select_one(".mets-field-body")
+        if not label_node or not value_node:
+            continue
+        destination = wanted.get(normal_key(clean(label_node.get_text(" ", strip=True))))
+        if destination:
+            value = clean(value_node.get_text(" ", strip=True))
+            if value:
+                fields[destination] = value
+    return fields
+
+
+def merx_items(source, session):
+    """Collect public MERX cards and the public fields on their detail pages."""
+    response = session.get(source["url"], timeout=(10, 45))
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    detail_limit = max(0, int(source.get("detail_lookup_limit", 25)))
+    detail_interval = max(0, float(source.get("detail_request_interval_seconds", 0.5)))
+    detail_lookups = 0
+    for node in soup.select(source.get("item_selector", "a.solicitation-link")):
+        title = select_text(node, ".rowTitle") or clean(node.get_text(" ", strip=True))[:240]
+        url = urljoin(source["url"], node.get("href", ""))
+        excerpt = clean(node.get_text(" ", strip=True))[:4000]
+        fields = {
+            "Issuing Organization": select_text(node, ".buyer-name"),
+            "Dates": select_text(node, ".timeRemaining"),
+            "Publication": select_text(node, ".publicationDate .dateValue"),
+            "Closing Date": select_text(node, ".closingDate .dateValue"),
+        }
+        item = {"title": title, "url": url, "published_text": fields["Publication"], "excerpt": excerpt}
+        # Use no more than 25 public detail pages per run, with a small pause.
+        if detail_lookups < detail_limit and relevant(item, source):
+            try:
+                fields.update(merx_detail_fields(session, url))
+            except requests.RequestException:
+                pass
+            detail_lookups += 1
+            time.sleep(detail_interval)
+        yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
 
 
 def rss_items(source, session):
@@ -353,6 +412,10 @@ def collect(source, session, db=None):
     source_type = source.get("type", "html")
     if source_type == "ottawa_devapps":
         items = ottawa_items(source, session, db)
+    elif source_type == "merx" or (source.get("name") or "").lower().startswith("merx"):
+        # Also recognize earlier sources.json entries created before the
+        # dedicated MERX type was introduced.
+        items = merx_items(source, session)
     else:
         get_items = rss_items if source_type == "rss" else html_items
         items = get_items(source, session)
