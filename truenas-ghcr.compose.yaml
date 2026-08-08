@@ -1,0 +1,30 @@
+# TrueNAS Apps > Discover Apps > three-dot menu > Install via YAML
+# This image is built automatically by GitHub Actions after you upload the project.
+services:
+  permit-watch:
+    image: ghcr.io/mrkorvo/permit-watch:stable
+    container_name: permit-watch
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      TZ: America/Toronto
+      DATA_DIR: /data
+      SCRAPE_INTERVAL_MINUTES: "360"
+      # Paste your replacement OpenRouter key here in TrueNAS only.
+      # Do not add it to GitHub.
+      OPENROUTER_API_KEY: ""
+      OPENROUTER_MODEL: openrouter/free
+
+    volumes:
+      # Change 'tank' to your actual TrueNAS pool name if different.
+      - /mnt/tank/apps/permit-watch:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8080/healthz"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,62 @@
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+
+
+class Database:
+    def __init__(self, path: Path):
+        self.path = path
+
+    @contextmanager
+    def connection(self):
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def initialize(self):
+        with self.connection() as conn:
+            conn.executescript("""
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS items (
+              id INTEGER PRIMARY KEY, source_name TEXT NOT NULL, title TEXT NOT NULL,
+              url TEXT NOT NULL, published_text TEXT, excerpt TEXT NOT NULL,
+              fingerprint TEXT NOT NULL UNIQUE, relevant INTEGER NOT NULL,
+              enrichment TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS runs (
+              id INTEGER PRIMARY KEY, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              finished_at TEXT, status TEXT NOT NULL, message TEXT
+            );
+            """)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+            if "metadata" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN metadata TEXT")
+
+    def add_item(self, item):
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO items
+                (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment, metadata)
+                VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant, :enrichment, :metadata)
+            """, item)
+            return cursor.rowcount == 1
+
+    def recent_items(self, limit=100):
+        with self.connection() as conn:
+            return conn.execute("SELECT * FROM items ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    def begin_run(self):
+        with self.connection() as conn:
+            return conn.execute("INSERT INTO runs(status) VALUES ('running')").lastrowid
+
+    def finish_run(self, run_id, status, message):
+        with self.connection() as conn:
+            conn.execute("UPDATE runs SET finished_at=CURRENT_TIMESTAMP, status=?, message=? WHERE id=?", (status, message, run_id))
+
+    def latest_run(self):
+        with self.connection() as conn:
+            return conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()

@@ -1,0 +1,17 @@
+services:
+  permit-watch:
+    build: .
+    image: permit-watch:local
+    container_name: permit-watch
+    ports:
+      - "8080:8080"
+    environment:
+      # Leave blank to disable enrichment. Keep this secret in TrueNAS, not in sources.json.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+      SCRAPE_INTERVAL_MINUTES: ${SCRAPE_INTERVAL_MINUTES:-360}
+      TZ: ${TZ:-America/Toronto}
+    volumes:
+      # Create this dataset/path first and place sources.json in it.
+      - /mnt/tank/apps/permit-watch:/data
+    restart: unless-stopped

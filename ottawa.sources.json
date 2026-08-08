@@ -1,0 +1,13 @@
+{
+  "sources": [
+    {
+      "name": "City of Ottawa — active site plans and condominiums",
+      "type": "ottawa_devapps",
+      "application_types": [
+        "Site Plan Control",
+        "Plan of Condominium"
+      ],
+      "enabled": true
+    }
+  ]
+}

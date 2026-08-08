@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "name": "City of Ottawa — active site plans and condominiums",
+      "type": "ottawa_devapps",
+      "application_types": ["Site Plan Control", "Plan of Condominium"],
+      "enabled": false
+    },
+    {
+      "name": "Example public notices",
+      "url": "https://example.gov/public-notices",
+      "type": "html",
+      "item_selector": ".notice-card",
+      "title_selector": "h2, h3",
+      "link_selector": "a",
+      "date_selector": "time",
+      "keywords": ["permit", "development", "zoning"],
+      "enabled": false,
+      "min_request_interval_seconds": 5
+    }
+  ]
+}
