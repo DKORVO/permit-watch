@@ -17,4 +17,4 @@ This update resolves missing Ottawa addresses through the City's public per-appl
 6. In TrueNAS, open Permit Watch, select **Edit**, then **Save**. Keep `pull_policy: always` in the YAML.
 7. When the app returns to Running, select **Run now** once.
 
-The app progressively fills missing addresses. If more than 25 were missing, run it again later to process the next group.
+The app remembers resolved addresses, so each subsequent run progresses to the next group of up to 25 missing addresses instead of repeating the first group.
