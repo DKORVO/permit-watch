@@ -156,6 +156,13 @@ def first_value(values, *names):
     return ""
 
 
+def ottawa_title(application_number, address, application_type):
+    """Build a concise title using only public, readable values."""
+    if address.startswith("Not provided by City of Ottawa") or re.fullmatch(r"_[A-Za-z0-9_]+", address):
+        address = ""
+    return " — ".join(part for part in (application_number, address, application_type) if part) or "Ottawa development application"
+
+
 def ottawa_type_map(session, key):
     """Map the API's internal application-type codes to their public names."""
     response = session.get(OTTAWA_TYPES_API, params={"authKey": key}, timeout=(10, 60))
@@ -210,15 +217,28 @@ def ottawa_detail_fields(session, key, application_number):
         display_value(detail.get("plannerFirstName")),
         display_value(detail.get("plannerLastName")),
     ) if part)
+    # Field names have varied between releases of the public Ottawa service.
+    # Check the known alternatives without exposing a generic City contact
+    # number as though it belonged to the application file lead.
+    planner_phone = first_value(
+        detail,
+        "planner phone number",
+        "planner phone",
+        "planner telephone",
+        "file lead phone number",
+        "file lead phone",
+        "file lead telephone",
+    )
     return {
         "Addresses": "; ".join(addresses),
         "Date Received": display_value(detail.get("applicationDateYMD")),
         "Description": display_value(detail.get("applicationBriefDesc")),
         "File Lead": planner,
+        "File Lead Phone": planner_phone,
     }
 
 
-def ottawa_items(source, session):
+def ottawa_items(source, session, db=None):
     key = find_ottawa_key(session)
     type_map = ottawa_type_map(session, key)
     response = session.get(OTTAWA_API, params={"authKey": key}, timeout=(10, 60))
@@ -231,6 +251,7 @@ def ottawa_items(source, session):
     detail_lookup_limit = max(0, int(source.get("detail_lookup_limit", 25)))
     detail_interval = max(0.2, float(source.get("detail_request_interval_seconds", 0.5)))
     detail_lookups = 0
+    known_addresses = db.resolved_addresses_by_url() if db else {}
     for record in records:
         values = ottawa_properties(record)
         application_type = first_value(values, "application type", "applicationtype", "application type description", "type")
@@ -247,7 +268,6 @@ def ottawa_items(source, session):
         application_type = application_type or (resolved_types[0] if resolved_types else matched_type.title())
         number = first_value(values, "application number", "applicationnumber", "file number", "filenumber")
         address = first_value(values, "address", "site address", "municipal address", "location")
-        title = " — ".join(part for part in (number, address, application_type) if part) or "Ottawa development application"
         published = first_value(values, "date received", "application date", "date submitted", "date")
         details = "; ".join(f"{key}: {display_value(value)}" for key, value in values.items() if value not in (None, ""))
         detail_url = f"{OTTAWA_LANDING_PAGE}applications/{number}/details" if number else OTTAWA_LANDING_PAGE
@@ -261,7 +281,10 @@ def ottawa_items(source, session):
             "Status Date": first_value(values, "status date", "statusdate"),
             "Description": first_value(values, "description", "application description", "proposal description", "proposal"),
             "File Lead": first_value(values, "file lead", "filelead", "file lead name", "planner", "planner name", "case officer", "lead"),
+            "File Lead Phone": first_value(values, "file lead phone", "planner phone", "file lead telephone", "planner telephone"),
         }
+        if known_addresses.get(detail_url):
+            fields["Addresses"] = known_addresses[detail_url]
         address_is_missing = not fields["Addresses"] or fields["Addresses"].startswith("Not provided by City of Ottawa")
         if number and address_is_missing and detail_lookups < detail_lookup_limit:
             try:
@@ -269,12 +292,15 @@ def ottawa_items(source, session):
                 for label, value in detail.items():
                     if value:
                         fields[label] = value
+                if fields["Addresses"]:
+                    known_addresses[detail_url] = fields["Addresses"]
             except (requests.RequestException, ValueError):
                 # Leave the public list value in place if one detail record is
                 # temporarily unavailable; a later scheduled scrape can retry.
                 pass
             detail_lookups += 1
             time.sleep(detail_interval)
+        title = ottawa_title(number, fields["Addresses"], application_type)
         yield {"title": title, "url": detail_url, "published_text": published, "excerpt": details[:4000], "metadata": json.dumps(fields)}
 
 
@@ -297,13 +323,14 @@ def fingerprint(item):
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
 
 
-def collect(source, session):
+def collect(source, session, db=None):
     source_type = source.get("type", "html")
     if source_type == "ottawa_devapps":
-        get_items = ottawa_items
+        items = ottawa_items(source, session, db)
     else:
         get_items = rss_items if source_type == "rss" else html_items
-    for item in get_items(source, session):
+        items = get_items(source, session)
+    for item in items:
         if not item["title"]:
             continue
         item["source_name"] = source["name"]
@@ -321,7 +348,7 @@ def scrape_all(data_dir, db, enrich):
     session.headers["User-Agent"] = USER_AGENT
     counts = {"seen": 0, "new": 0, "relevant": 0}
     for index, source in enumerate(sources):
-        for item in collect(source, session):
+        for item in collect(source, session, db):
             counts["seen"] += 1
             if item["relevant"]:
                 counts["relevant"] += 1
@@ -349,3 +376,44 @@ def retry_failed_enrichments(db, enrich, limit):
         db.update_enrichment(item["id"], summary, status)
         counts[status] += 1
     return counts
+
+
+def resolve_ottawa_addresses(data_dir, db, limit):
+    """Fill a small batch of missing addresses using Ottawa's public detail API."""
+    if not any(source.get("type") == "ottawa_devapps" for source in load_sources(data_dir)):
+        return {"attempted": 0, "resolved": 0, "remaining": 0}
+    records = db.ottawa_missing_address_items(limit)
+    if not records:
+        return {"attempted": 0, "resolved": 0, "remaining": 0}
+
+    session = requests.Session()
+    session.headers["User-Agent"] = USER_AGENT
+    key = find_ottawa_key(session)
+    resolved = 0
+    for record in records:
+        metadata = record["metadata"]
+        number = clean(str(metadata.get("Application #", "")))
+        if not number:
+            match = re.search(r"/applications/([^/]+)/details$", record["url"])
+            number = match.group(1) if match else ""
+        if not number:
+            continue
+        try:
+            detail = ottawa_detail_fields(session, key, number)
+            if detail.get("Addresses"):
+                metadata.update({label: value for label, value in detail.items() if value})
+                db.update_metadata_and_title(
+                    record["id"],
+                    metadata,
+                    ottawa_title(
+                        clean(str(metadata.get("Application #", ""))),
+                        clean(str(metadata.get("Addresses", ""))),
+                        clean(str(metadata.get("Application", ""))),
+                    ),
+                )
+                resolved += 1
+        except (requests.RequestException, ValueError):
+            pass
+        time.sleep(0.5)
+    remaining = db.ottawa_address_counts()["missing"]
+    return {"attempted": len(records), "resolved": resolved, "remaining": remaining}
