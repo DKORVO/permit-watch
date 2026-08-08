@@ -21,7 +21,12 @@ def render_source_page(section):
     db = current_app.extensions["db"]
     items = [dict(item) for item in db.recent_items()]
     if section == "ottawa":
-        items = [item for item in items if "ottawa" in item["source_name"].lower()]
+        # MERX has an "Ottawa opportunities" source name too.  Match the
+        # City feed explicitly so its page cannot include MERX records.
+        items = [
+            item for item in items
+            if (item.get("source_name") or "").lower().startswith("city of ottawa")
+        ]
         page_title = "City of Ottawa"
         page_subtitle = "Development applications"
         empty_message = "No City of Ottawa findings have been collected yet."
