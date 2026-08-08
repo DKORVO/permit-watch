@@ -8,12 +8,15 @@ bp = Blueprint("views", __name__)
 def index():
     db = current_app.extensions["db"]
     items = [dict(item) for item in db.recent_items()]
+    groups = {"awaiting": [], "enriched": [], "failed": []}
     for item in items:
         try:
             item["metadata"] = json.loads(item["metadata"]) if item.get("metadata") else {}
         except (TypeError, json.JSONDecodeError):
             item["metadata"] = {}
-    return render_template("index.html", items=items, latest_run=db.latest_run())
+        status = item.get("enrichment_status") or "awaiting"
+        groups[status if status in groups else "awaiting"].append(item)
+    return render_template("index.html", groups=groups, total_items=len(items), latest_run=db.latest_run())
 
 @bp.post("/run-now")
 def run_now():

@@ -209,6 +209,15 @@ def relevant(item, source):
     return not words or any(word in (item["title"] + " " + item["excerpt"]).lower() for word in words)
 
 
+def enrichment_status(summary):
+    if not summary:
+        return "awaiting"
+    lowered = summary.lower()
+    if lowered.startswith("enrichment unavailable") or lowered.startswith("enrichment returned no summary"):
+        return "failed"
+    return "enriched"
+
+
 def fingerprint(item):
     stable = "\n".join((item["url"], item["title"], item["published_text"], item["excerpt"]))
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
@@ -227,6 +236,7 @@ def collect(source, session):
         item["relevant"] = int(relevant(item, source))
         item["fingerprint"] = fingerprint(item)
         item["enrichment"] = None
+        item["enrichment_status"] = "awaiting"
         item.setdefault("metadata", None)
         yield item
 
@@ -242,6 +252,7 @@ def scrape_all(data_dir, db, enrich):
             if item["relevant"]:
                 counts["relevant"] += 1
                 item["enrichment"] = enrich(item)
+                item["enrichment_status"] = enrichment_status(item["enrichment"])
             if db.add_item(item):
                 counts["new"] += 1
         if index < len(sources) - 1:

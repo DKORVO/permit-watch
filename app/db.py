@@ -35,13 +35,24 @@ class Database:
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
             if "metadata" not in columns:
                 conn.execute("ALTER TABLE items ADD COLUMN metadata TEXT")
+            if "enrichment_status" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN enrichment_status TEXT NOT NULL DEFAULT 'awaiting'")
+                conn.execute("""
+                    UPDATE items
+                    SET enrichment_status = CASE
+                        WHEN enrichment IS NULL OR TRIM(enrichment) = '' THEN 'awaiting'
+                        WHEN LOWER(enrichment) LIKE 'enrichment unavailable%'
+                          OR LOWER(enrichment) LIKE 'enrichment returned no summary%' THEN 'failed'
+                        ELSE 'enriched'
+                    END
+                """)
 
     def add_item(self, item):
         with self.connection() as conn:
             cursor = conn.execute("""
                 INSERT OR IGNORE INTO items
-                (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment, metadata)
-                VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant, :enrichment, :metadata)
+                (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment, metadata, enrichment_status)
+                VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant, :enrichment, :metadata, :enrichment_status)
             """, item)
             return cursor.rowcount == 1
 
