@@ -130,16 +130,28 @@ def ottawa_record_list(payload):
 
 
 def first_value(values, *names):
+    def usable(candidate):
+        text = display_value(candidate)
+        # Ottawa's API uses underscore-prefixed opaque identifiers in several
+        # fields. They are not public addresses or other display values.
+        if re.fullmatch(r"_[A-Za-z0-9_]+", text):
+            return ""
+        return text
+
     lowered = {normal_key(key): value for key, value in values.items()}
     for name in names:
         requested = normal_key(name)
         value = lowered.get(requested)
         if value not in (None, ""):
-            return display_value(value)
+            text = usable(value)
+            if text:
+                return text
         for key, candidate in lowered.items():
             if requested in key or key in requested:
                 if candidate not in (None, ""):
-                    return display_value(candidate)
+                    text = usable(candidate)
+                    if text:
+                        return text
     return ""
 
 
@@ -251,8 +263,12 @@ def scrape_all(data_dir, db, enrich):
             counts["seen"] += 1
             if item["relevant"]:
                 counts["relevant"] += 1
-                item["enrichment"] = enrich(item)
-                item["enrichment_status"] = enrichment_status(item["enrichment"])
+                # Existing items are refreshed below without calling OpenRouter
+                # again. This keeps a scheduled scrape from consuming quota on
+                # the same historical records every time it runs.
+                if not db.item_exists(item["fingerprint"]):
+                    item["enrichment"] = enrich(item)
+                    item["enrichment_status"] = enrichment_status(item["enrichment"])
             if db.add_item(item):
                 counts["new"] += 1
         if index < len(sources) - 1:

@@ -49,12 +49,28 @@ class Database:
 
     def add_item(self, item):
         with self.connection() as conn:
+            existing = conn.execute("SELECT id FROM items WHERE fingerprint = ?", (item["fingerprint"],)).fetchone()
+            if existing:
+                # Public source data can gain/correct fields after first import.
+                # Preserve the stored enrichment, but refresh the source fields.
+                conn.execute("""
+                    UPDATE items
+                    SET source_name = :source_name, title = :title, url = :url,
+                        published_text = :published_text, excerpt = :excerpt,
+                        relevant = :relevant, metadata = :metadata
+                    WHERE id = :id
+                """, {**item, "id": existing["id"]})
+                return False
             cursor = conn.execute("""
                 INSERT OR IGNORE INTO items
                 (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment, metadata, enrichment_status)
                 VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant, :enrichment, :metadata, :enrichment_status)
             """, item)
             return cursor.rowcount == 1
+
+    def item_exists(self, fingerprint):
+        with self.connection() as conn:
+            return conn.execute("SELECT 1 FROM items WHERE fingerprint = ?", (fingerprint,)).fetchone() is not None
 
     def recent_items(self, limit=100):
         with self.connection() as conn:
