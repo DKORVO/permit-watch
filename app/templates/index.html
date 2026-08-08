@@ -24,11 +24,26 @@
         {% endif %}
       </div>
     </header>
+    {% if section == 'home' %}
+    <section class="source-chooser">
+      <h2>Choose a source</h2>
+      <p>Select a monitored source to view its findings.</p>
+      <div class="source-cards">
+        <a class="source-card" href="{{ url_for('views.ottawa') }}"><strong>City of Ottawa</strong><span>Development applications</span></a>
+        <a class="source-card" href="{{ url_for('views.merx') }}"><strong>MERX</strong><span>Procurement opportunities · coming soon</span></a>
+      </div>
+    </section>
+    {% else %}
+    <nav class="source-tabs" aria-label="Finding source">
+      <a class="{% if section == 'ottawa' %}active{% endif %}" href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
+      <a class="{% if section == 'merx' %}active{% endif %}" href="{{ url_for('views.merx') }}">MERX</a>
+    </nav>
+    <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
     {% if latest_run %}
     <aside class="{{ latest_run['status'] }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
     {% endif %}
-    {% if address_counts['resolved'] or address_counts['missing'] %}
+    {% if address_counts and (address_counts['resolved'] or address_counts['missing']) %}
     <aside>Ottawa addresses: {{ address_counts['resolved'] }} resolved · {{ address_counts['missing'] }} remaining. The app resolves up to 25 every 10 minutes.</aside>
     {% endif %}
 
@@ -51,7 +66,8 @@
       </section>
       {% endfor %}
     {% else %}
-    <section class="empty"><h2>No items yet</h2><p>Add an enabled source to <code>/data/sources.json</code>, then select Run now.</p></section>
+      <section class="empty"><h2>No items yet</h2><p>{{ empty_message }}</p></section>
+    {% endif %}
     {% endif %}
   </main>
 </body>
