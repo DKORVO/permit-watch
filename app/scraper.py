@@ -94,6 +94,7 @@ def merx_detail_fields(session, url):
     soup = BeautifulSoup(response.text, "html.parser")
     fields = {}
     wanted = {
+        "title": "Title",
         "issuing organization": "Issuing Organization",
         "solicitation type": "Solicitation Type",
         "publication date": "Publication",
@@ -139,6 +140,10 @@ def merx_items(source, session):
                 pass
             detail_lookups += 1
             time.sleep(detail_interval)
+        # The detail page has the clean title.  Keep it out of the field list:
+        # it is the card's linked heading, just as application numbers/titles
+        # are handled on the Ottawa page.
+        item["title"] = fields.pop("Title", item["title"])
         yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
 
 
