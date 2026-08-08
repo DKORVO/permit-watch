@@ -3,7 +3,7 @@ import json
 import re
 import time
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -72,6 +72,7 @@ def rss_items(source, session):
 
 OTTAWA_LANDING_PAGE = "https://devapps.ottawa.ca/en/"
 OTTAWA_API = "https://devapps-restapi.ottawa.ca/devapps/feature/all"
+OTTAWA_DETAIL_API = "https://devapps-restapi.ottawa.ca/devapps"
 OTTAWA_TYPES_API = "https://devapps-restapi.ottawa.ca/devapps/apptype/all"
 # Values exposed by the City of Ottawa's public Application Type selector.
 # Keep the dynamic lookup below as a fallback for future types.
@@ -172,6 +173,51 @@ def ottawa_type_map(session, key):
     return mapping
 
 
+def ottawa_detail_fields(session, key, application_number):
+    """Return public detail fields, including readable street addresses.
+
+    The City's list service sometimes returns an internal address identifier.
+    Its public per-application endpoint provides the actual address records.
+    """
+    response = session.get(
+        f"{OTTAWA_DETAIL_API}/{quote(application_number, safe='')}",
+        params={"authKey": key},
+        timeout=(10, 45),
+    )
+    response.raise_for_status()
+    detail = response.json()
+    if not isinstance(detail, dict):
+        return {}
+
+    addresses = []
+    for address in detail.get("devAppAddresses", []):
+        if not isinstance(address, dict):
+            continue
+        text = display_value(address.get("addressNumberRoadName"))
+        if not text:
+            parts = [
+                display_value(address.get("addressNumber")),
+                display_value(address.get("addressQualifier")),
+                display_value(address.get("roadName")),
+                display_value(address.get("cardinalDirection")),
+                display_value(address.get("roadType")),
+            ]
+            text = " ".join(part for part in parts if part)
+        if text and text not in addresses:
+            addresses.append(text)
+
+    planner = " ".join(part for part in (
+        display_value(detail.get("plannerFirstName")),
+        display_value(detail.get("plannerLastName")),
+    ) if part)
+    return {
+        "Addresses": "; ".join(addresses),
+        "Date Received": display_value(detail.get("applicationDateYMD")),
+        "Description": display_value(detail.get("applicationBriefDesc")),
+        "File Lead": planner,
+    }
+
+
 def ottawa_items(source, session):
     key = find_ottawa_key(session)
     type_map = ottawa_type_map(session, key)
@@ -182,6 +228,9 @@ def ottawa_items(source, session):
     if not records:
         raise ValueError("Ottawa data response did not contain an application list")
     wanted_types = [clean(item).lower() for item in source.get("application_types", ["Site Plan Control", "Plan of Condominium"])]
+    detail_lookup_limit = max(0, int(source.get("detail_lookup_limit", 25)))
+    detail_interval = max(0.2, float(source.get("detail_request_interval_seconds", 0.5)))
+    detail_lookups = 0
     for record in records:
         values = ottawa_properties(record)
         application_type = first_value(values, "application type", "applicationtype", "application type description", "type")
@@ -213,6 +262,19 @@ def ottawa_items(source, session):
             "Description": first_value(values, "description", "application description", "proposal description", "proposal"),
             "File Lead": first_value(values, "file lead", "filelead", "file lead name", "planner", "planner name", "case officer", "lead"),
         }
+        address_is_missing = not fields["Addresses"] or fields["Addresses"].startswith("Not provided by City of Ottawa")
+        if number and address_is_missing and detail_lookups < detail_lookup_limit:
+            try:
+                detail = ottawa_detail_fields(session, key, number)
+                for label, value in detail.items():
+                    if value:
+                        fields[label] = value
+            except (requests.RequestException, ValueError):
+                # Leave the public list value in place if one detail record is
+                # temporarily unavailable; a later scheduled scrape can retry.
+                pass
+            detail_lookups += 1
+            time.sleep(detail_interval)
         yield {"title": title, "url": detail_url, "published_text": published, "excerpt": details[:4000], "metadata": json.dumps(fields)}
 
 
