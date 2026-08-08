@@ -355,3 +355,36 @@ def retry_failed_enrichments(db, enrich, limit):
         db.update_enrichment(item["id"], summary, status)
         counts[status] += 1
     return counts
+
+
+def resolve_ottawa_addresses(data_dir, db, limit):
+    """Fill a small batch of missing addresses using Ottawa's public detail API."""
+    if not any(source.get("type") == "ottawa_devapps" for source in load_sources(data_dir)):
+        return {"attempted": 0, "resolved": 0, "remaining": 0}
+    records = db.ottawa_missing_address_items(limit)
+    if not records:
+        return {"attempted": 0, "resolved": 0, "remaining": 0}
+
+    session = requests.Session()
+    session.headers["User-Agent"] = USER_AGENT
+    key = find_ottawa_key(session)
+    resolved = 0
+    for record in records:
+        metadata = record["metadata"]
+        number = clean(str(metadata.get("Application #", "")))
+        if not number:
+            match = re.search(r"/applications/([^/]+)/details$", record["url"])
+            number = match.group(1) if match else ""
+        if not number:
+            continue
+        try:
+            detail = ottawa_detail_fields(session, key, number)
+            if detail.get("Addresses"):
+                metadata.update({label: value for label, value in detail.items() if value})
+                db.update_metadata(record["id"], metadata)
+                resolved += 1
+        except (requests.RequestException, ValueError):
+            pass
+        time.sleep(0.5)
+    remaining = db.ottawa_address_counts()["missing"]
+    return {"attempted": len(records), "resolved": resolved, "remaining": remaining}

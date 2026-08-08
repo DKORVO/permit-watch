@@ -16,7 +16,7 @@ def index():
             item["metadata"] = {}
         status = item.get("enrichment_status") or "awaiting"
         groups[status if status in groups else "awaiting"].append(item)
-    return render_template("index.html", groups=groups, total_items=len(items), latest_run=db.latest_run())
+    return render_template("index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(), address_counts=db.ottawa_address_counts())
 
 @bp.post("/run-now")
 def run_now():

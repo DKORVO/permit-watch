@@ -24,6 +24,9 @@
     {% if latest_run %}
     <aside class="{{ latest_run['status'] }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
     {% endif %}
+    {% if address_counts['resolved'] or address_counts['missing'] %}
+    <aside>Ottawa addresses: {{ address_counts['resolved'] }} resolved · {{ address_counts['missing'] }} remaining. The app resolves up to 25 every 10 minutes.</aside>
+    {% endif %}
 
     {% if total_items %}
       {% for status, title in [('awaiting', 'Awaiting Enrichment'), ('enriched', 'Enriched'), ('failed', 'Enrichment Failed')] %}
