@@ -1,3 +1,5 @@
+import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -50,6 +52,10 @@ class Database:
     def add_item(self, item):
         with self.connection() as conn:
             existing = conn.execute("SELECT id FROM items WHERE fingerprint = ?", (item["fingerprint"],)).fetchone()
+            # Ottawa's detail URL is a stable application identifier.  Reuse
+            # the original card when its title gains a resolved address.
+            if not existing:
+                existing = conn.execute("SELECT id FROM items WHERE url = ?", (item["url"],)).fetchone()
             if existing:
                 # Public source data can gain/correct fields after first import.
                 # Preserve the stored enrichment, but refresh the source fields.
@@ -71,6 +77,73 @@ class Database:
     def item_exists(self, fingerprint):
         with self.connection() as conn:
             return conn.execute("SELECT 1 FROM items WHERE fingerprint = ?", (fingerprint,)).fetchone() is not None
+
+    def resolved_addresses_by_url(self):
+        """Return previously resolved human-readable addresses keyed by URL."""
+        addresses = {}
+        with self.connection() as conn:
+            rows = conn.execute("SELECT url, metadata FROM items WHERE metadata IS NOT NULL").fetchall()
+        for row in rows:
+            try:
+                value = json.loads(row["metadata"]).get("Addresses", "").strip()
+            except (AttributeError, TypeError, json.JSONDecodeError):
+                continue
+            if value and not value.startswith("Not provided by City of Ottawa") and not re.fullmatch(r"_[A-Za-z0-9_]+", value):
+                addresses[row["url"]] = value
+        return addresses
+
+    def ottawa_missing_address_items(self, limit):
+        """Return a capped, newest-first batch of Ottawa records needing an address."""
+        missing = []
+        with self.connection() as conn:
+            rows = conn.execute("""
+                SELECT id, url, metadata FROM items
+                WHERE url LIKE 'https://devapps.ottawa.ca/en/applications/%/details'
+                  AND metadata IS NOT NULL
+                ORDER BY id DESC
+            """).fetchall()
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"])
+                address = str(metadata.get("Addresses", "")).strip()
+            except (AttributeError, TypeError, json.JSONDecodeError):
+                continue
+            if not address or address.startswith("Not provided by City of Ottawa") or re.fullmatch(r"_[A-Za-z0-9_]+", address):
+                missing.append({"id": row["id"], "url": row["url"], "metadata": metadata})
+                if len(missing) >= limit:
+                    break
+        return missing
+
+    def update_metadata(self, item_id, metadata):
+        with self.connection() as conn:
+            conn.execute("UPDATE items SET metadata = ? WHERE id = ?", (json.dumps(metadata), item_id))
+
+    def update_metadata_and_title(self, item_id, metadata, title):
+        """Save resolved public fields and the matching card title together."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE items SET metadata = ?, title = ? WHERE id = ?",
+                (json.dumps(metadata), title, item_id),
+            )
+
+    def ottawa_address_counts(self):
+        resolved = missing = 0
+        with self.connection() as conn:
+            rows = conn.execute("""
+                SELECT metadata FROM items
+                WHERE url LIKE 'https://devapps.ottawa.ca/en/applications/%/details'
+                  AND metadata IS NOT NULL
+            """).fetchall()
+        for row in rows:
+            try:
+                address = str(json.loads(row["metadata"]).get("Addresses", "")).strip()
+            except (AttributeError, TypeError, json.JSONDecodeError):
+                continue
+            if address and not address.startswith("Not provided by City of Ottawa") and not re.fullmatch(r"_[A-Za-z0-9_]+", address):
+                resolved += 1
+            else:
+                missing += 1
+        return {"resolved": resolved, "missing": missing}
 
     def recent_items(self, limit=100):
         with self.connection() as conn:
