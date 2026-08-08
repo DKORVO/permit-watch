@@ -26,10 +26,10 @@ def render_source_page(section):
         page_subtitle = "Development applications"
         empty_message = "No City of Ottawa findings have been collected yet."
     else:
-        items = [item for item in items if "merx" in item["source_name"].lower()]
+        items = [item for item in items if "merx" in item["source_name"].lower() and item["relevant"]]
         page_title = "MERX"
-        page_subtitle = "Procurement opportunities"
-        empty_message = "MERX monitoring is coming soon. Add a MERX source when you are ready."
+        page_subtitle = "Ottawa and Gatineau procurement opportunities"
+        empty_message = "No Ottawa or Gatineau MERX opportunities have been collected yet."
     assets_dir = Path(current_app.config["DATA_DIR"]) / "assets"
     logo_filename = next(
         (name for name in ("ottawa-logo.png", "ottawa-logo.svg", "ottawa-logo.webp") if (assets_dir / name).is_file()),
