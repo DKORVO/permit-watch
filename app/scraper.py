@@ -258,3 +258,16 @@ def scrape_all(data_dir, db, enrich):
         if index < len(sources) - 1:
             time.sleep(max(1, int(source.get("min_request_interval_seconds", 5))))
     return counts
+
+
+def retry_failed_enrichments(db, enrich, limit):
+    """Retry a capped number of failed summaries without re-scraping sources."""
+    items = db.failed_enrichment_items(limit)
+    counts = {"retried": len(items), "awaiting": 0, "enriched": 0, "failed": 0}
+    for row in items:
+        item = dict(row)
+        summary = enrich(item)
+        status = enrichment_status(summary)
+        db.update_enrichment(item["id"], summary, status)
+        counts[status] += 1
+    return counts

@@ -23,6 +23,18 @@ def run_now():
     current_app.extensions["scraper_scheduler"].scheduler.add_job(current_app.extensions["scraper_scheduler"].run, "date", replace_existing=True)
     return redirect(url_for("views.index"))
 
+
+@bp.post("/retry-enrichment")
+def retry_enrichment():
+    scheduler = current_app.extensions["scraper_scheduler"].scheduler
+    scheduler.add_job(
+        current_app.extensions["scraper_scheduler"].retry_failed_enrichments,
+        "date",
+        id="retry-enrichment",
+        replace_existing=True,
+    )
+    return redirect(url_for("views.index"))
+
 @bp.get("/healthz")
 def healthz():
     return jsonify(status="ok")

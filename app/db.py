@@ -60,6 +60,21 @@ class Database:
         with self.connection() as conn:
             return conn.execute("SELECT * FROM items ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
+    def failed_enrichment_items(self, limit):
+        with self.connection() as conn:
+            return conn.execute("""
+                SELECT * FROM items
+                WHERE relevant = 1 AND enrichment_status = 'failed'
+                ORDER BY id ASC LIMIT ?
+            """, (limit,)).fetchall()
+
+    def update_enrichment(self, item_id, summary, status):
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE items SET enrichment = ?, enrichment_status = ? WHERE id = ?",
+                (summary, status, item_id),
+            )
+
     def begin_run(self):
         with self.connection() as conn:
             return conn.execute("INSERT INTO runs(status) VALUES ('running')").lastrowid

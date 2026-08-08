@@ -5,7 +5,7 @@ import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .enrichment import enrich_item
-from .scraper import scrape_all
+from .scraper import retry_failed_enrichments, scrape_all
 
 
 class ScrapeScheduler:
@@ -33,6 +33,23 @@ class ScrapeScheduler:
             except Exception as exc:
                 self.app.logger.exception("Scrape run failed")
                 db.finish_run(run_id, "error", str(exc)[:1000])
+            return True
+        finally:
+            self.lock.release()
+
+    def retry_failed_enrichments(self):
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
+            db = self.app.extensions["db"]
+            run_id = db.begin_run()
+            try:
+                limit = max(1, int(os.environ.get("ENRICHMENT_RETRY_LIMIT", "10")))
+                result = retry_failed_enrichments(db, enrich_item, limit)
+                db.finish_run(run_id, "success", f"Enrichment retry: {result['enriched']} enriched, {result['failed']} still failed, {result['awaiting']} awaiting ({result['retried']} attempted)")
+            except Exception as exc:
+                self.app.logger.exception("Enrichment retry failed")
+                db.finish_run(run_id, "error", f"Enrichment retry: {str(exc)[:950]}")
             return True
         finally:
             self.lock.release()
