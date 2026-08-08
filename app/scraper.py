@@ -10,6 +10,27 @@ from bs4 import BeautifulSoup
 
 USER_AGENT = "PermitWatch/0.1 (local civic-information monitor; contact: administrator)"
 
+MERX_SOURCES = [
+    {
+        "name": "MERX — Ottawa opportunities",
+        "url": "https://www.merx.com/public/solicitations/open?keywords=Ottawa",
+        "type": "html",
+        "item_selector": "a.solicitation-link",
+        "keywords": ["ottawa"],
+        "enabled": True,
+        "min_request_interval_seconds": 5,
+    },
+    {
+        "name": "MERX — Gatineau opportunities",
+        "url": "https://www.merx.com/public/solicitations/open?keywords=Gatineau",
+        "type": "html",
+        "item_selector": "a.solicitation-link",
+        "keywords": ["gatineau"],
+        "enabled": True,
+        "min_request_interval_seconds": 5,
+    },
+]
+
 
 def load_sources(data_dir: Path):
     with (data_dir / "sources.json").open(encoding="utf-8") as handle:
@@ -17,6 +38,11 @@ def load_sources(data_dir: Path):
     sources = config.get("sources", [])
     if not isinstance(sources, list):
         raise ValueError("sources.json must contain a 'sources' list")
+    # Include public MERX searches automatically. Administrators can override
+    # or disable either one by adding a source with the same name to
+    # sources.json.
+    source_names = {source.get("name") for source in sources}
+    sources.extend(source for source in MERX_SOURCES if source["name"] not in source_names)
     return [s for s in sources if s.get("enabled", True)]
 
 
@@ -52,7 +78,7 @@ def html_items(source, session):
         raise ValueError(f"{source['name']}: item_selector is required for HTML sources")
     for node in soup.select(selector):
         title = select_text(node, source.get("title_selector")) or clean(node.get_text(" ", strip=True))[:240]
-        link = node.select_one(source.get("link_selector", "a[href]"))
+        link = node if node.name == "a" and node.get("href") else node.select_one(source.get("link_selector", "a[href]"))
         url = urljoin(source["url"], link["href"]) if link and link.get("href") else source["url"]
         yield {"title": title, "url": url, "published_text": select_text(node, source.get("date_selector")), "excerpt": clean(node.get_text(" ", strip=True))[:4000]}
 
