@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Permit Watch</title>
+  <title>Watcher</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
   <main>
     <header>
       <div class="brand">
-        {% if logo_filename %}<img class="city-logo" src="{{ url_for('views.persistent_asset', filename=logo_filename) }}" alt="City of Ottawa logo">{% endif %}
+        {% if section == 'ottawa' and logo_filename %}<img class="city-logo" src="{{ url_for('views.persistent_asset', filename=logo_filename) }}" alt="City of Ottawa logo">{% endif %}
         <div>
-          <h1>Permit Watch</h1>
-          <p class="city-name">City of Ottawa</p>
+          <h1>Watcher</h1>
+          {% if section == 'ottawa' %}<p class="city-name">City of Ottawa</p>{% endif %}
           <p>Public-notice monitor · verify findings at the source</p>
         </div>
       </div>
@@ -30,7 +30,7 @@
       <p>Select a monitored source to view its findings.</p>
       <div class="source-cards">
         <a class="source-card" href="{{ url_for('views.ottawa') }}"><strong>City of Ottawa</strong><span>Development applications</span></a>
-        <a class="source-card" href="{{ url_for('views.merx') }}"><strong>MERX</strong><span>Procurement opportunities · coming soon</span></a>
+        <a class="source-card" href="{{ url_for('views.merx') }}"><strong>MERX</strong><span>Ottawa and Gatineau procurement opportunities</span></a>
       </div>
     </section>
     {% else %}
