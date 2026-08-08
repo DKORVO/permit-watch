@@ -156,6 +156,13 @@ def first_value(values, *names):
     return ""
 
 
+def ottawa_title(application_number, address, application_type):
+    """Build a concise title using only public, readable values."""
+    if address.startswith("Not provided by City of Ottawa") or re.fullmatch(r"_[A-Za-z0-9_]+", address):
+        address = ""
+    return " — ".join(part for part in (application_number, address, application_type) if part) or "Ottawa development application"
+
+
 def ottawa_type_map(session, key):
     """Map the API's internal application-type codes to their public names."""
     response = session.get(OTTAWA_TYPES_API, params={"authKey": key}, timeout=(10, 60))
@@ -210,11 +217,24 @@ def ottawa_detail_fields(session, key, application_number):
         display_value(detail.get("plannerFirstName")),
         display_value(detail.get("plannerLastName")),
     ) if part)
+    # Field names have varied between releases of the public Ottawa service.
+    # Check the known alternatives without exposing a generic City contact
+    # number as though it belonged to the application file lead.
+    planner_phone = first_value(
+        detail,
+        "planner phone number",
+        "planner phone",
+        "planner telephone",
+        "file lead phone number",
+        "file lead phone",
+        "file lead telephone",
+    )
     return {
         "Addresses": "; ".join(addresses),
         "Date Received": display_value(detail.get("applicationDateYMD")),
         "Description": display_value(detail.get("applicationBriefDesc")),
         "File Lead": planner,
+        "File Lead Phone": planner_phone,
     }
 
 
@@ -248,7 +268,6 @@ def ottawa_items(source, session, db=None):
         application_type = application_type or (resolved_types[0] if resolved_types else matched_type.title())
         number = first_value(values, "application number", "applicationnumber", "file number", "filenumber")
         address = first_value(values, "address", "site address", "municipal address", "location")
-        title = " — ".join(part for part in (number, address, application_type) if part) or "Ottawa development application"
         published = first_value(values, "date received", "application date", "date submitted", "date")
         details = "; ".join(f"{key}: {display_value(value)}" for key, value in values.items() if value not in (None, ""))
         detail_url = f"{OTTAWA_LANDING_PAGE}applications/{number}/details" if number else OTTAWA_LANDING_PAGE
@@ -262,6 +281,7 @@ def ottawa_items(source, session, db=None):
             "Status Date": first_value(values, "status date", "statusdate"),
             "Description": first_value(values, "description", "application description", "proposal description", "proposal"),
             "File Lead": first_value(values, "file lead", "filelead", "file lead name", "planner", "planner name", "case officer", "lead"),
+            "File Lead Phone": first_value(values, "file lead phone", "planner phone", "file lead telephone", "planner telephone"),
         }
         if known_addresses.get(detail_url):
             fields["Addresses"] = known_addresses[detail_url]
@@ -280,6 +300,7 @@ def ottawa_items(source, session, db=None):
                 pass
             detail_lookups += 1
             time.sleep(detail_interval)
+        title = ottawa_title(number, fields["Addresses"], application_type)
         yield {"title": title, "url": detail_url, "published_text": published, "excerpt": details[:4000], "metadata": json.dumps(fields)}
 
 
@@ -381,7 +402,15 @@ def resolve_ottawa_addresses(data_dir, db, limit):
             detail = ottawa_detail_fields(session, key, number)
             if detail.get("Addresses"):
                 metadata.update({label: value for label, value in detail.items() if value})
-                db.update_metadata(record["id"], metadata)
+                db.update_metadata_and_title(
+                    record["id"],
+                    metadata,
+                    ottawa_title(
+                        clean(str(metadata.get("Application #", ""))),
+                        clean(str(metadata.get("Addresses", ""))),
+                        clean(str(metadata.get("Application", ""))),
+                    ),
+                )
                 resolved += 1
         except (requests.RequestException, ValueError):
             pass

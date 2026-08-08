@@ -52,6 +52,10 @@ class Database:
     def add_item(self, item):
         with self.connection() as conn:
             existing = conn.execute("SELECT id FROM items WHERE fingerprint = ?", (item["fingerprint"],)).fetchone()
+            # Ottawa's detail URL is a stable application identifier.  Reuse
+            # the original card when its title gains a resolved address.
+            if not existing:
+                existing = conn.execute("SELECT id FROM items WHERE url = ?", (item["url"],)).fetchone()
             if existing:
                 # Public source data can gain/correct fields after first import.
                 # Preserve the stored enrichment, but refresh the source fields.
@@ -113,6 +117,14 @@ class Database:
     def update_metadata(self, item_id, metadata):
         with self.connection() as conn:
             conn.execute("UPDATE items SET metadata = ? WHERE id = ?", (json.dumps(metadata), item_id))
+
+    def update_metadata_and_title(self, item_id, metadata, title):
+        """Save resolved public fields and the matching card title together."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE items SET metadata = ?, title = ? WHERE id = ?",
+                (json.dumps(metadata), title, item_id),
+            )
 
     def ottawa_address_counts(self):
         resolved = missing = 0
