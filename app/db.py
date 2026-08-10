@@ -68,7 +68,7 @@ class Database:
                     UPDATE items
                     SET source_name = :source_name, title = :title, url = :url,
                         published_text = :published_text, excerpt = :excerpt,
-                        relevant = :relevant, metadata = :metadata
+                        fingerprint = :fingerprint, relevant = :relevant, metadata = :metadata
                     WHERE id = :id
                 """, {**item, "id": existing["id"]})
                 return False
@@ -79,9 +79,13 @@ class Database:
             """, item)
             return cursor.rowcount == 1
 
-    def item_exists(self, fingerprint):
+    def item_exists(self, fingerprint, url=None):
+        """Return whether a finding already exists by content or stable URL."""
         with self.connection() as conn:
-            return conn.execute("SELECT 1 FROM items WHERE fingerprint = ?", (fingerprint,)).fetchone() is not None
+            return conn.execute(
+                "SELECT 1 FROM items WHERE fingerprint = ? OR (? IS NOT NULL AND url = ?)",
+                (fingerprint, url, url),
+            ).fetchone() is not None
 
     def resolved_addresses_by_url(self):
         """Return previously resolved human-readable addresses keyed by URL."""

@@ -1,8 +1,9 @@
 import json
-import os
 from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_from_directory, url_for
+
+from .config import env_int
 
 bp = Blueprint("views", __name__)
 
@@ -20,7 +21,7 @@ def grouped_items(items):
 
 def render_source_page(section):
     db = current_app.extensions["db"]
-    daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
+    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 35)
     if section == "ottawa":
         # Fetch this source before categories are grouped.  A global "latest
         # 100" list can otherwise hide older enriched cards behind newer ones.
@@ -61,7 +62,7 @@ def merx():
 def home():
     db = current_app.extensions["db"]
     data_dir = Path(current_app.config["DATA_DIR"])
-    daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
+    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 35)
     logo_filename = next(
         (name for name in ("ottawa-logo.png", "ottawa-logo.svg", "ottawa-logo.webp") if (data_dir / "assets" / name).is_file()),
         None,
@@ -97,7 +98,12 @@ def persistent_asset(filename):
 
 @bp.post("/run-now")
 def run_now():
-    current_app.extensions["scraper_scheduler"].scheduler.add_job(current_app.extensions["scraper_scheduler"].run, "date", replace_existing=True)
+    current_app.extensions["scraper_scheduler"].scheduler.add_job(
+        current_app.extensions["scraper_scheduler"].run,
+        "date",
+        id="manual-scrape",
+        replace_existing=True,
+    )
     return redirect(request.referrer or url_for("views.ottawa"))
 
 
