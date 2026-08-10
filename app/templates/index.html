@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="actions">
-        {% if section != 'home' %}<a class="button-link secondary" href="{{ url_for('views.home') }}">Home</a>{% endif %}
+        {% if section != 'home' %}<a class="button-link secondary icon-button" href="{{ url_for('views.home') }}" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></a>{% endif %}
         <form method="post" action="{{ url_for('views.run_now') }}"><button>Run now</button></form>
         {% if groups['failed'] %}
         <form method="post" action="{{ url_for('views.retry_enrichment') }}"><button class="secondary">Retry enrichment ({{ groups['failed']|length }})</button></form>
