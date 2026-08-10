@@ -3,7 +3,10 @@
     {
       "name": "City of Ottawa — active site plans and condominiums",
       "type": "ottawa_devapps",
-      "application_types": ["Site Plan Control", "Plan of Condominium"],
+      "application_types": [
+        "Site Plan Control",
+        "Plan of Condominium"
+      ],
       "detail_lookup_limit": 25,
       "detail_request_interval_seconds": 0.5,
       "enabled": false
@@ -16,24 +19,25 @@
       "title_selector": "h2, h3",
       "link_selector": "a",
       "date_selector": "time",
-      "keywords": ["permit", "development", "zoning"],
+      "keywords": [
+        "permit",
+        "development",
+        "zoning"
+      ],
       "enabled": false,
       "min_request_interval_seconds": 5
     },
     {
-      "name": "MERX — Ottawa opportunities",
-      "url": "https://www.merx.com/public/solicitations/open?keywords=Ottawa",
-      "type": "html",
+      "name": "MERX — Canada opportunities",
+      "url": "https://www.merx.com/public/solicitations/open",
+      "type": "merx",
       "item_selector": "a.solicitation-link",
-      "keywords": ["ottawa"],
-      "enabled": true
-    },
-    {
-      "name": "MERX — Gatineau opportunities",
-      "url": "https://www.merx.com/public/solicitations/open?keywords=Gatineau",
-      "type": "html",
-      "item_selector": "a.solicitation-link",
-      "keywords": ["gatineau"],
+      "page_limit": 5,
+      "page_request_interval_seconds": 1,
+      "detail_lookup_limit": 100,
+      "detail_request_interval_seconds": 0.5,
+      "relevance_profile": "physical_security_integrator",
+      "minimum_relevance_score": 6,
       "enabled": true
     }
   ]
