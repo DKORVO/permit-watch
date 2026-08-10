@@ -13,10 +13,12 @@
         {% if section == 'ottawa' and logo_filename %}<img class="city-logo" src="{{ url_for('views.persistent_asset', filename=logo_filename) }}" alt="City of Ottawa logo">{% endif %}
         <div>
           <h1>Watcher</h1>
-            <p>Public-notice monitor · verify findings at the source</p>
+          {% if section == 'ottawa' %}<p class="city-name">City of Ottawa</p>{% endif %}
+          <p>Public-notice monitor · verify findings at the source</p>
         </div>
       </div>
       <div class="actions">
+        {% if section != 'home' %}<a class="button-link secondary" href="{{ url_for('views.home') }}">Home</a>{% endif %}
         <form method="post" action="{{ url_for('views.run_now') }}"><button>Run now</button></form>
         {% if groups['failed'] %}
         <form method="post" action="{{ url_for('views.retry_enrichment') }}"><button class="secondary">Retry enrichment ({{ groups['failed']|length }})</button></form>
@@ -24,12 +26,22 @@
       </div>
     </header>
     {% if section == 'home' %}
-    <section class="source-chooser">
-      <h2>Choose a source</h2>
+    <section class="dashboard-overview">
+      <h2>Dashboard</h2>
+      <div class="dashboard-notices">
+        <aside>Enrichment budget: <strong>{{ enrichment_budget['remaining'] }} remaining</strong> of {{ enrichment_budget['limit'] }} today ({{ enrichment_budget['used'] }} used).</aside>
+        {% if latest_run %}<aside class="{{ latest_run['status'] }}">Last activity: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>{% endif %}
+      </div>
       <p>Select a monitored source to view its findings.</p>
       <div class="source-cards">
-        <a class="source-card" href="{{ url_for('views.ottawa') }}"><strong>City of Ottawa</strong><span>Development applications</span></a>
-        <a class="source-card" href="{{ url_for('views.merx') }}"><strong>MERX</strong><span>Ottawa and Gatineau procurement opportunities</span></a>
+        {% for source in home_summaries %}
+        <a class="source-card" href="{{ url_for(source['endpoint']) }}">
+          <strong>{{ source['name'] }}</strong><span>{{ source['description'] }}</span>
+          <span class="source-total">{{ source['summary']['total'] }} findings</span>
+          <span class="status-counts"><b>{{ source['summary']['enriched'] }} enriched</b><b>{{ source['summary']['awaiting'] }} awaiting</b><b>{{ source['summary']['failed'] }} failed</b></span>
+          {% if source['summary']['latest_collected'] %}<small>Latest finding: {{ source['summary']['latest_collected']|localtime }}</small>{% endif %}
+        </a>
+        {% endfor %}
       </div>
     </section>
     {% else %}
@@ -39,19 +51,26 @@
     </nav>
     <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
+    <form class="finding-controls" onsubmit="return false;" aria-label="Findings controls">
+      <label>Search <input id="finding-search" type="search" placeholder="Title, address, organization…"></label>
+      <label>Category <select id="status-filter"><option value="all">All categories</option><option value="awaiting">Awaiting Enrichment</option><option value="enriched">Enriched</option><option value="failed">Enrichment Failed</option></select></label>
+      <label>Sort <select id="finding-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="closing">Closing date</option></select></label>
+    </form>
+
     {% if latest_run %}
     <aside class="{{ latest_run['status'] }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
     {% endif %}
     {% if address_counts and (address_counts['resolved'] or address_counts['missing']) %}
     <aside>Ottawa addresses: {{ address_counts['resolved'] }} resolved · {{ address_counts['missing'] }} remaining. The app resolves up to 25 every 10 minutes.</aside>
     {% endif %}
+    <aside>Enrichment budget: {{ enrichment_budget['remaining'] }} remaining of {{ enrichment_budget['limit'] }} today.</aside>
 
     {% if total_items %}
       {% for status, title in [('awaiting', 'Awaiting Enrichment'), ('enriched', 'Enriched'), ('failed', 'Enrichment Failed')] %}
       <section class="finding-group {{ status }}">
         <h2>{{ title }} <span>{{ groups[status]|length }}</span></h2>
         {% for item in groups[status] %}
-        <article>
+        <article data-status="{{ status }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-title="{{ item['title']|lower }}">
           <div class="meta"><span>{{ item['source_name'] }}</span>{% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}{% if item['relevant'] %}<b>Relevant</b>{% endif %}</div>
           <h3><a href="{{ item['url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a></h3>
           <dl class="fields">{% for label, value in item['metadata'].items() if value %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
@@ -69,5 +88,37 @@
     {% endif %}
     {% endif %}
   </main>
+  {% if section != 'home' %}
+  <script>
+    (() => {
+      const search = document.querySelector('#finding-search');
+      const status = document.querySelector('#status-filter');
+      const sort = document.querySelector('#finding-sort');
+      const groups = [...document.querySelectorAll('.finding-group')];
+      const update = () => {
+        const term = search.value.trim().toLowerCase();
+        groups.forEach(group => {
+          const articles = [...group.querySelectorAll('article')];
+          articles.forEach(card => {
+            card.hidden = (status.value !== 'all' && card.dataset.status !== status.value) ||
+              (term && !card.dataset.search.includes(term));
+          });
+          const ordered = articles.sort((a, b) => {
+            if (sort.value === 'title') return a.dataset.title.localeCompare(b.dataset.title);
+            if (sort.value === 'oldest') return a.dataset.created.localeCompare(b.dataset.created);
+            if (sort.value === 'closing') return (a.dataset.closing || '9999').localeCompare(b.dataset.closing || '9999');
+            return b.dataset.created.localeCompare(a.dataset.created);
+          });
+          ordered.forEach(card => group.appendChild(card));
+          const shown = articles.some(card => !card.hidden);
+          group.hidden = !shown;
+        });
+      };
+      [search, status, sort].forEach(control => control.addEventListener('input', update));
+      status.addEventListener('change', update);
+      sort.addEventListener('change', update);
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>
