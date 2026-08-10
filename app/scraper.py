@@ -36,7 +36,7 @@ CANADABUYS_SOURCE = {
     "type": "canadabuys",
     "enabled": True,
     "min_request_interval_seconds": 5,
-    "page_limit": 5,
+    "page_limit": 1,
     "page_request_interval_seconds": 1,
     "detail_lookup_limit": 100,
     "detail_request_interval_seconds": 0.5,
@@ -281,8 +281,21 @@ def canadabuys_items(source, session):
 
     for page_number in range(1, page_limit + 1):
         page_url = canadabuys_page_url(source["url"], page_number)
-        response = session.get(page_url, timeout=(10, 45))
-        response.raise_for_status()
+        try:
+            response = session.get(page_url, timeout=(10, 45))
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            if page_number == 1:
+                raise
+            # CanadaBuys can reject automated pagination even after serving
+            # the first page. Keep those results and try again next run.
+            logger.warning(
+                "CanadaBuys pagination stopped at page %s after %s: %s",
+                page_number,
+                page_url,
+                exc,
+            )
+            break
         soup = BeautifulSoup(response.text, "html.parser")
         rows = soup.select("table tbody tr")
         page_had_new_items = False
