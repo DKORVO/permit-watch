@@ -44,7 +44,7 @@
       "name": "CanadaBuys — tender opportunities",
       "url": "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=1920&status%5B1%5D=87",
       "type": "canadabuys",
-      "page_limit": 5,
+      "page_limit": 1,
       "page_request_interval_seconds": 1,
       "detail_lookup_limit": 100,
       "detail_request_interval_seconds": 0.5,
