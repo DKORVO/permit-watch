@@ -46,6 +46,7 @@
     <nav class="source-tabs" aria-label="Finding source">
       <a class="{% if section == 'ottawa' %}active{% endif %}" href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
       <a class="{% if section == 'merx' %}active{% endif %}" href="{{ url_for('views.merx') }}">MERX</a>
+      <a class="{% if section == 'canadabuys' %}active{% endif %}" href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
     </nav>
     <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
@@ -56,7 +57,7 @@
       <label>{{ filter['label'] }}
         <select class="metadata-filter" data-field="{{ filter['field'] }}">
           <option value="all">All</option>
-          {% for option in filter['options'] %}<option value="{{ option|lower }}"{% if section == 'merx' and filter['field'] == '_Security Match' and option == 'matched' %} selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>{% endfor %}
+          {% for option in filter['options'] %}<option value="{{ option|lower }}"{% if section in ['merx', 'canadabuys'] and filter['field'] == '_Security Match' and option == 'matched' %} selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>{% endfor %}
         </select>
       </label>
       {% endfor %}
