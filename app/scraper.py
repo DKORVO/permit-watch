@@ -657,7 +657,7 @@ def collect(source, session, db=None):
         yield item
 
 
-def scrape_all(data_dir, db, enrich, daily_limit=50):
+def scrape_all(data_dir, db, enrich, daily_limit=100):
     sources = load_sources(data_dir)
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
@@ -684,7 +684,7 @@ def scrape_all(data_dir, db, enrich, daily_limit=50):
     return counts
 
 
-def retry_failed_enrichments(db, enrich, limit, daily_limit=50):
+def retry_failed_enrichments(db, enrich, limit, daily_limit=100):
     """Retry a capped number of failed summaries without re-scraping sources."""
     items = db.failed_enrichment_items(limit)
     counts = {"retried": 0, "awaiting": 0, "enriched": 0, "failed": 0, "budget_skipped": 0}
