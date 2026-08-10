@@ -17,25 +17,69 @@ def grouped_items(items):
     return groups
 
 
+def metadata_options(items, field):
+    return sorted({
+        str(item["metadata"].get(field, "")).strip()
+        for item in items
+        if item["metadata"].get(field)
+    })
+
+
 def render_source_page(section):
     db = current_app.extensions["db"]
     daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 50)
     if section == "ottawa":
-        # Fetch this source before categories are grouped.  A global "latest
-        # 100" list can otherwise hide older enriched cards behind newer ones.
-        items = [dict(item) for item in db.recent_items_for_source("City of Ottawa")]
+        rows = db.recent_items_for_source("City of Ottawa")
         page_title = "City of Ottawa"
         page_subtitle = "Development applications"
         empty_message = "No City of Ottawa findings have been collected yet."
+        search_placeholder = "Application number, address, description, file lead…"
+        filter_fields = [
+            ("Application", "Application type"),
+            ("Application Status", "Application status"),
+            ("Review Status", "Review status"),
+        ]
+        sort_options = [
+            ("newest", "Newest collected"),
+            ("received", "Date received"),
+            ("address", "Address"),
+            ("title", "Title A–Z"),
+        ]
     else:
-        items = [dict(item) for item in db.recent_items_for_source("MERX")]
+        # Keep non-matches available for review; the page defaults to scored
+        # physical-security integrator matches.
+        rows = db.recent_items_for_source("MERX", relevant_only=False)
         page_title = "MERX"
-        page_subtitle = "Ottawa and Gatineau procurement opportunities"
-        empty_message = "No Ottawa or Gatineau MERX opportunities have been collected yet."
+        page_subtitle = "Canada-wide physical-security integration opportunities"
+        empty_message = "No Canadian MERX opportunities have been collected yet."
+        search_placeholder = "Title, organization, location, security technology…"
+        filter_fields = [
+            ("_Security Match", "Security relevance"),
+            ("Solicitation Type", "Solicitation type"),
+            ("Location", "Location"),
+        ]
+        sort_options = [
+            ("closing", "Closing soon"),
+            ("publication", "Publication date"),
+            ("newest", "Newest collected"),
+            ("title", "Title A–Z"),
+        ]
+
+    items = [dict(item) for item in rows]
+    groups = grouped_items(items)
+    prepared_items = [item for group in groups.values() for item in group]
+    filters = []
+    for field, label in filter_fields:
+        options = metadata_options(prepared_items, field)
+        if field == "_Security Match":
+            options = ["matched", "other"]
+        filters.append({"field": field, "label": label, "options": options})
+
     return render_template(
-        "index.html", groups=grouped_items(items), total_items=len(items), latest_run=db.latest_run(),
-        section=section, page_title=page_title,
-        page_subtitle=page_subtitle, empty_message=empty_message,
+        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(),
+        section=section, page_title=page_title, page_subtitle=page_subtitle,
+        empty_message=empty_message, search_placeholder=search_placeholder,
+        filters=filters, sort_options=sort_options,
         enrichment_budget=db.enrichment_budget(daily_limit), home_summaries=None,
     )
 
@@ -65,7 +109,7 @@ def home():
                 "endpoint": "views.ottawa", "summary": db.source_summary("City of Ottawa"),
             },
             {
-                "name": "MERX", "description": "Ottawa and Gatineau procurement opportunities",
+                "name": "MERX", "description": "Canada-wide physical-security integration opportunities",
                 "endpoint": "views.merx", "summary": db.source_summary("MERX"),
             },
         ],
