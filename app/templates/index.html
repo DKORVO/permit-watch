@@ -10,10 +10,8 @@
   <main>
     <header>
       <div class="brand">
-        {% if section == 'ottawa' and logo_filename %}<img class="city-logo" src="{{ url_for('views.persistent_asset', filename=logo_filename) }}" alt="City of Ottawa logo">{% endif %}
         <div>
           <h1>Watcher</h1>
-          {% if section == 'ottawa' %}<p class="city-name">City of Ottawa</p>{% endif %}
           <p>Public-notice monitor · verify findings at the source</p>
         </div>
       </div>
@@ -59,9 +57,6 @@
 
     {% if latest_run %}
     <aside class="{{ latest_run['status'] }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
-    {% endif %}
-    {% if address_counts and (address_counts['resolved'] or address_counts['missing']) %}
-    <aside>Ottawa addresses: {{ address_counts['resolved'] }} resolved · {{ address_counts['missing'] }} remaining. The app resolves up to 25 every 10 minutes.</aside>
     {% endif %}
     <aside>Enrichment budget: {{ enrichment_budget['remaining'] }} remaining of {{ enrichment_budget['limit'] }} today.</aside>
 
