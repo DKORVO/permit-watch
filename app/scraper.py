@@ -15,28 +15,49 @@ USER_AGENT = "PermitWatch/0.1 (local civic-information monitor; contact: adminis
 
 MERX_SOURCES = [
     {
-        "name": "MERX — Ottawa opportunities",
-        "url": "https://www.merx.com/public/solicitations/open?keywords=Ottawa",
+        "name": "MERX — Canada opportunities",
+        "url": "https://www.merx.com/public/solicitations/open",
         "type": "merx",
         "item_selector": "a.solicitation-link",
-        "keywords": ["ottawa"],
         "enabled": True,
         "min_request_interval_seconds": 5,
-        "detail_lookup_limit": 25,
+        "page_limit": 5,
+        "page_request_interval_seconds": 1,
+        "detail_lookup_limit": 100,
         "detail_request_interval_seconds": 0.5,
-    },
-    {
-        "name": "MERX — Gatineau opportunities",
-        "url": "https://www.merx.com/public/solicitations/open?keywords=Gatineau",
-        "type": "merx",
-        "item_selector": "a.solicitation-link",
-        "keywords": ["gatineau"],
-        "enabled": True,
-        "min_request_interval_seconds": 5,
-        "detail_lookup_limit": 25,
-        "detail_request_interval_seconds": 0.5,
+        "relevance_profile": "physical_security_integrator",
+        "minimum_relevance_score": 6,
     },
 ]
+
+LEGACY_MERX_SOURCE_NAMES = {
+    "MERX — Ottawa opportunities",
+    "MERX — Gatineau opportunities",
+}
+
+PHYSICAL_SECURITY_TERMS = (
+    "access control", "card reader", "credential system", "cctv",
+    "video surveillance", "security camera", "intrusion detection",
+    "intrusion alarm", "burglar alarm", "intercom", "video intercom",
+    "duress alarm", "panic alarm", "electronic security",
+    "integrated security system", "physical security system",
+    "perimeter detection", "security management system",
+)
+SECURITY_WORK_TERMS = (
+    "integrator", "integration", "supply and install", "installation",
+    "replacement", "upgrade", "retrofit", "commissioning", "programming",
+    "maintenance", "repair", "support", "design-build",
+)
+SECURITY_BRANDS = (
+    "genetec", "lenel", "avigilon", "milestone", "kantech", "axis",
+    "bosch", "honeywell", "hid", "johnson controls", "gallagher", "salto",
+)
+SECURITY_EXCLUSIONS = (
+    "cybersecurity", "network security", "information security",
+    "security awareness", "penetration testing", "security guard",
+    "guarding services", "patrol services", "airport screening",
+    "event security", "financial security", "scada", "fire alarm only",
+)
 
 
 def load_sources(data_dir: Path):
@@ -45,9 +66,8 @@ def load_sources(data_dir: Path):
     sources = config.get("sources", [])
     if not isinstance(sources, list):
         raise ValueError("sources.json must contain a 'sources' list")
-    # Include public MERX searches automatically. Administrators can override
-    # or disable either one by adding a source with the same name to
-    # sources.json.
+    # Replace the legacy Ottawa/Gatineau defaults with the nationwide source.
+    sources = [source for source in sources if source.get("name") not in LEGACY_MERX_SOURCE_NAMES]
     source_names = {source.get("name") for source in sources}
     sources.extend(source for source in MERX_SOURCES if source["name"] not in source_names)
     return [s for s in sources if s.get("enabled", True)]
@@ -90,8 +110,31 @@ def html_items(source, session):
         yield {"title": title, "url": url, "published_text": select_text(node, source.get("date_selector")), "excerpt": clean(node.get_text(" ", strip=True))[:4000]}
 
 
+def physical_security_score(item, metadata):
+    """Score a MERX opportunity for physical-security integration work."""
+    text = " ".join(
+        [item.get("title", ""), item.get("excerpt", ""), *[str(value) for value in metadata.values()]]
+    ).lower()
+    technology = sorted({term for term in PHYSICAL_SECURITY_TERMS if term in text})
+    work = sorted({term for term in SECURITY_WORK_TERMS if term in text})
+    brands = sorted({term for term in SECURITY_BRANDS if term in text})
+    exclusions = sorted({term for term in SECURITY_EXCLUSIONS if term in text})
+    score = (
+        4 * min(len(technology), 2)
+        + 3 * min(len(work), 2)
+        + 2 * min(len(brands), 2)
+        - 5 * min(len(exclusions), 2)
+    )
+    # "Access control" is common in software bids. Require another physical
+    # technology term when software/security exclusions are also present.
+    if technology == ["access control"] and exclusions:
+        score = min(score, 0)
+    reasons = technology + work + brands
+    return score, reasons, exclusions
+
+
 def merx_detail_fields(session, url):
-    """Read public basic fields that MERX omits from its search cards."""
+    """Read public MERX fields and searchable detail text."""
     response = session.get(url, timeout=(10, 45))
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
@@ -102,6 +145,8 @@ def merx_detail_fields(session, url):
         "solicitation type": "Solicitation Type",
         "publication date": "Publication",
         "closing date": "Closing Date",
+        "location": "Location",
+        "description": "Description",
     }
     for node in soup.select(".mets-field"):
         label_node = node.select_one(".mets-field-label")
@@ -113,41 +158,69 @@ def merx_detail_fields(session, url):
             value = clean(value_node.get_text(" ", strip=True))
             if value:
                 fields[destination] = value
-    return fields
+    description = fields.pop("Description", "") or select_text(
+        soup, ".solicitation-description, .mets-description, #description"
+    )
+    detail_text = clean(" ".join([description, soup.get_text(" ", strip=True)]))[:12000]
+    return fields, detail_text
+
+
+def merx_page_url(base_url, page_number):
+    if page_number == 1:
+        return base_url
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}pageNumber={page_number}"
 
 
 def merx_items(source, session):
-    """Collect public MERX cards and the public fields on their detail pages."""
-    response = session.get(source["url"], timeout=(10, 45))
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    detail_limit = max(0, int(source.get("detail_lookup_limit", 25)))
+    """Collect nationwide public MERX cards and selected detail fields."""
+    detail_limit = max(0, int(source.get("detail_lookup_limit", 100)))
     detail_interval = max(0, float(source.get("detail_request_interval_seconds", 0.5)))
+    page_limit = max(1, int(source.get("page_limit", 5)))
+    page_interval = max(0, float(source.get("page_request_interval_seconds", 1)))
     detail_lookups = 0
-    for node in soup.select(source.get("item_selector", "a.solicitation-link")):
-        title = select_text(node, ".rowTitle") or clean(node.get_text(" ", strip=True))[:240]
-        url = urljoin(source["url"], node.get("href", ""))
-        excerpt = clean(node.get_text(" ", strip=True))[:4000]
-        fields = {
-            "Issuing Organization": select_text(node, ".buyer-name"),
-            "Dates": select_text(node, ".timeRemaining"),
-            "Publication": select_text(node, ".publicationDate .dateValue"),
-            "Closing Date": select_text(node, ".closingDate .dateValue"),
-        }
-        item = {"title": title, "url": url, "published_text": fields["Publication"], "excerpt": excerpt}
-        # Use no more than 25 public detail pages per run, with a small pause.
-        if detail_lookups < detail_limit and relevant(item, source):
-            try:
-                fields.update(merx_detail_fields(session, url))
-            except requests.RequestException as exc:
-                logger.warning("MERX detail lookup failed for %s: %s", url, exc)
-            detail_lookups += 1
-            time.sleep(detail_interval)
-        # The detail page has the clean title.  Keep it out of the field list:
-        # it is the card's linked heading, just as application numbers/titles
-        # are handled on the Ottawa page.
-        item["title"] = fields.pop("Title", item["title"])
-        yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
+    seen_urls = set()
+
+    for page_number in range(1, page_limit + 1):
+        page_url = merx_page_url(source["url"], page_number)
+        response = session.get(page_url, timeout=(10, 45))
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        nodes = soup.select(source.get("item_selector", "a.solicitation-link"))
+        page_had_new_items = False
+
+        for node in nodes:
+            title = select_text(node, ".rowTitle") or clean(node.get_text(" ", strip=True))[:240]
+            url = urljoin(source["url"], node.get("href", ""))
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            page_had_new_items = True
+            excerpt = clean(node.get_text(" ", strip=True))[:4000]
+            fields = {
+                "Issuing Organization": select_text(node, ".buyer-name"),
+                "Location": select_text(node, ".location"),
+                "Dates": select_text(node, ".timeRemaining"),
+                "Publication": select_text(node, ".publicationDate .dateValue"),
+                "Closing Date": select_text(node, ".closingDate .dateValue"),
+            }
+            item = {"title": title, "url": url, "published_text": fields["Publication"], "excerpt": excerpt}
+            if detail_lookups < detail_limit:
+                try:
+                    detail_fields, detail_text = merx_detail_fields(session, url)
+                    fields.update(detail_fields)
+                    item["excerpt"] = detail_text[:4000] or item["excerpt"]
+                except requests.RequestException as exc:
+                    logger.warning("MERX detail lookup failed for %s: %s", url, exc)
+                detail_lookups += 1
+                time.sleep(detail_interval)
+            item["title"] = fields.pop("Title", item["title"])
+            yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
+
+        if not nodes or not page_had_new_items:
+            break
+        if page_number < page_limit:
+            time.sleep(page_interval)
 
 
 def rss_items(source, session):
@@ -443,7 +516,21 @@ def collect(source, session, db=None):
         if not item["title"]:
             continue
         item["source_name"] = source["name"]
-        item["relevant"] = int(relevant(item, source))
+        if source.get("relevance_profile") == "physical_security_integrator":
+            try:
+                metadata = json.loads(item.get("metadata") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                metadata = {}
+            score, reasons, exclusions = physical_security_score(item, metadata)
+            minimum_score = int(source.get("minimum_relevance_score", 6))
+            item["relevant"] = int(score >= minimum_score)
+            metadata["_Security Match"] = "matched" if item["relevant"] else "other"
+            metadata["_Match Score"] = score
+            metadata["_Match Reasons"] = ", ".join(reasons)
+            metadata["_Exclusions"] = ", ".join(exclusions)
+            item["metadata"] = json.dumps(metadata)
+        else:
+            item["relevant"] = int(relevant(item, source))
         item["fingerprint"] = fingerprint(item)
         item["enrichment"] = None
         item["enrichment_status"] = "awaiting"

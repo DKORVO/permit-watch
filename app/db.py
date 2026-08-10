@@ -105,17 +105,14 @@ class Database:
         with self.connection() as conn:
             return conn.execute("SELECT * FROM items ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
-    def recent_items_for_source(self, source_prefix, limit=1000):
-        """Return a page's findings before applying its category grouping.
-
-        Fetching the latest rows globally first can hide an older enriched
-        Ottawa card behind newer failed Ottawa or MERX records.
-        """
+    def recent_items_for_source(self, source_prefix, limit=1000, relevant_only=True):
+        """Return one source's findings, optionally including reviewable non-matches."""
+        relevance_clause = "AND relevant = 1" if relevant_only else ""
         with self.connection() as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT * FROM items
-                WHERE relevant = 1 AND LOWER(source_name) LIKE ?
+                WHERE LOWER(source_name) LIKE ? {relevance_clause}
                 ORDER BY id DESC
                 LIMIT ?
                 """,
