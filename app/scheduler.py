@@ -38,8 +38,15 @@ class ScrapeScheduler:
             db = self.app.extensions["db"]
             run_id = db.begin_run()
             try:
-                result = scrape_all(self.app.config["DATA_DIR"], db, enrich_item)
-                db.finish_run(run_id, "success", f"{result['new']} new from {result['seen']} items ({result['relevant']} relevant)")
+                daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
+                result = scrape_all(self.app.config["DATA_DIR"], db, enrich_item, daily_limit)
+                budget = db.enrichment_budget(daily_limit)
+                db.finish_run(
+                    run_id,
+                    "success",
+                    f"{result['new']} new from {result['seen']} items ({result['relevant']} relevant); "
+                    f"enrichment budget {budget['used']}/{budget['limit']} today",
+                )
             except Exception as exc:
                 self.app.logger.exception("Scrape run failed")
                 db.finish_run(run_id, "error", str(exc)[:1000])
@@ -55,8 +62,16 @@ class ScrapeScheduler:
             run_id = db.begin_run()
             try:
                 limit = max(1, int(os.environ.get("ENRICHMENT_RETRY_LIMIT", "10")))
-                result = retry_failed_enrichments(db, enrich_item, limit)
-                db.finish_run(run_id, "success", f"Enrichment retry: {result['enriched']} enriched, {result['failed']} still failed, {result['awaiting']} awaiting ({result['retried']} attempted)")
+                daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
+                result = retry_failed_enrichments(db, enrich_item, limit, daily_limit)
+                budget = db.enrichment_budget(daily_limit)
+                db.finish_run(
+                    run_id,
+                    "success",
+                    f"Enrichment retry: {result['enriched']} enriched, {result['failed']} still failed, "
+                    f"{result['awaiting']} awaiting ({result['retried']} attempted); "
+                    f"budget {budget['used']}/{budget['limit']} today",
+                )
             except Exception as exc:
                 self.app.logger.exception("Enrichment retry failed")
                 db.finish_run(run_id, "error", f"Enrichment retry: {str(exc)[:950]}")

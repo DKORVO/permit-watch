@@ -408,6 +408,18 @@ def enrichment_status(summary):
     return "enriched"
 
 
+def budgeted_enrich(item, db, enrich, daily_limit, context):
+    """Make one enrichment call only while today's local app budget remains."""
+    if db.enrichment_budget(daily_limit)["remaining"] <= 0:
+        return None, False
+    summary = enrich(item)
+    # A missing API key returns None without making an OpenRouter request.
+    if summary is None:
+        return None, False
+    db.record_enrichment_attempt(context)
+    return summary, True
+
+
 def fingerprint(item):
     stable = "\n".join((item["url"], item["title"], item["published_text"], item["excerpt"]))
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
@@ -436,11 +448,11 @@ def collect(source, session, db=None):
         yield item
 
 
-def scrape_all(data_dir, db, enrich):
+def scrape_all(data_dir, db, enrich, daily_limit=35):
     sources = load_sources(data_dir)
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
-    counts = {"seen": 0, "new": 0, "relevant": 0}
+    counts = {"seen": 0, "new": 0, "relevant": 0, "budget_skipped": 0}
     for index, source in enumerate(sources):
         for item in collect(source, session, db):
             counts["seen"] += 1
@@ -450,8 +462,12 @@ def scrape_all(data_dir, db, enrich):
                 # again. This keeps a scheduled scrape from consuming quota on
                 # the same historical records every time it runs.
                 if not db.item_exists(item["fingerprint"]):
-                    item["enrichment"] = enrich(item)
-                    item["enrichment_status"] = enrichment_status(item["enrichment"])
+                    summary, attempted = budgeted_enrich(item, db, enrich, daily_limit, "new finding")
+                    if attempted:
+                        item["enrichment"] = summary
+                        item["enrichment_status"] = enrichment_status(summary)
+                    else:
+                        counts["budget_skipped"] += 1
             if db.add_item(item):
                 counts["new"] += 1
         if index < len(sources) - 1:
@@ -459,16 +475,20 @@ def scrape_all(data_dir, db, enrich):
     return counts
 
 
-def retry_failed_enrichments(db, enrich, limit):
+def retry_failed_enrichments(db, enrich, limit, daily_limit=35):
     """Retry a capped number of failed summaries without re-scraping sources."""
     items = db.failed_enrichment_items(limit)
-    counts = {"retried": len(items), "awaiting": 0, "enriched": 0, "failed": 0}
+    counts = {"retried": 0, "awaiting": 0, "enriched": 0, "failed": 0, "budget_skipped": 0}
     for row in items:
         item = dict(row)
-        summary = enrich(item)
+        summary, attempted = budgeted_enrich(item, db, enrich, daily_limit, "manual retry")
+        if not attempted:
+            counts["budget_skipped"] += 1
+            break
         status = enrichment_status(summary)
         db.update_enrichment(item["id"], summary, status)
         counts[status] += 1
+        counts["retried"] += 1
     return counts
 
 

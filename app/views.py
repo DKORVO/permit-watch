@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_from_directory, url_for
@@ -19,6 +20,7 @@ def grouped_items(items):
 
 def render_source_page(section):
     db = current_app.extensions["db"]
+    daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
     if section == "ottawa":
         # Fetch this source before categories are grouped.  A global "latest
         # 100" list can otherwise hide older enriched cards behind newer ones.
@@ -41,6 +43,7 @@ def render_source_page(section):
         address_counts=db.ottawa_address_counts() if section == "ottawa" else None,
         logo_filename=logo_filename, section=section, page_title=page_title,
         page_subtitle=page_subtitle, empty_message=empty_message,
+        enrichment_budget=db.enrichment_budget(daily_limit), home_summaries=None,
     )
 
 
@@ -56,7 +59,9 @@ def merx():
 
 @bp.get("/")
 def home():
+    db = current_app.extensions["db"]
     data_dir = Path(current_app.config["DATA_DIR"])
+    daily_limit = max(1, int(os.environ.get("ENRICHMENT_DAILY_LIMIT", "35")))
     logo_filename = next(
         (name for name in ("ottawa-logo.png", "ottawa-logo.svg", "ottawa-logo.webp") if (data_dir / "assets" / name).is_file()),
         None,
@@ -64,7 +69,18 @@ def home():
     return render_template(
         "index.html", section="home", logo_filename=logo_filename,
         groups={"awaiting": [], "enriched": [], "failed": []}, total_items=0,
-        latest_run=None, address_counts=None,
+        latest_run=db.latest_run(), address_counts=None,
+        enrichment_budget=db.enrichment_budget(daily_limit),
+        home_summaries=[
+            {
+                "name": "City of Ottawa", "description": "Development applications",
+                "endpoint": "views.ottawa", "summary": db.source_summary("City of Ottawa"),
+            },
+            {
+                "name": "MERX", "description": "Ottawa and Gatineau procurement opportunities",
+                "endpoint": "views.merx", "summary": db.source_summary("MERX"),
+            },
+        ],
     )
 
 
