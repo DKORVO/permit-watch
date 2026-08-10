@@ -1,6 +1,6 @@
 import unittest
 
-from app.scraper import merx_page_url, physical_security_score
+from app.scraper import canadabuys_page_url, merx_page_url, physical_security_score
 
 
 class PhysicalSecurityScoreTests(unittest.TestCase):
@@ -31,6 +31,15 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
         score, _, exclusions = physical_security_score(item, {})
         self.assertLess(score, 6)
         self.assertIn("security guard", exclusions)
+
+    def test_canadabuys_pagination_url(self):
+        self.assertEqual(
+            canadabuys_page_url(
+                "https://canadabuys.canada.ca/en/tender-opportunities?status=open",
+                2,
+            ),
+            "https://canadabuys.canada.ca/en/tender-opportunities?status=open&page=1",
+        )
 
     def test_merx_pagination_url(self):
         self.assertEqual(

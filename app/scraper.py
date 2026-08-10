@@ -30,6 +30,20 @@ MERX_SOURCES = [
     },
 ]
 
+CANADABUYS_SOURCE = {
+    "name": "CanadaBuys — tender opportunities",
+    "url": "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=1920&status%5B1%5D=87",
+    "type": "canadabuys",
+    "enabled": True,
+    "min_request_interval_seconds": 5,
+    "page_limit": 5,
+    "page_request_interval_seconds": 1,
+    "detail_lookup_limit": 100,
+    "detail_request_interval_seconds": 0.5,
+    "relevance_profile": "physical_security_integrator",
+    "minimum_relevance_score": 6,
+}
+
 LEGACY_MERX_SOURCE_NAMES = {
     "MERX — Ottawa opportunities",
     "MERX — Gatineau opportunities",
@@ -69,7 +83,8 @@ def load_sources(data_dir: Path):
     # Replace the legacy Ottawa/Gatineau defaults with the nationwide source.
     sources = [source for source in sources if source.get("name") not in LEGACY_MERX_SOURCE_NAMES]
     source_names = {source.get("name") for source in sources}
-    sources.extend(source for source in MERX_SOURCES if source["name"] not in source_names)
+    builtin_sources = [*MERX_SOURCES, CANADABUYS_SOURCE]
+    sources.extend(source for source in builtin_sources if source["name"] not in source_names)
     return [s for s in sources if s.get("enabled", True)]
 
 
@@ -218,6 +233,95 @@ def merx_items(source, session):
             yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
 
         if not nodes or not page_had_new_items:
+            break
+        if page_number < page_limit:
+            time.sleep(page_interval)
+
+
+def canadabuys_page_url(base_url, page_number):
+    """CanadaBuys uses zero-based Drupal page numbers after the first page."""
+    if page_number == 1:
+        return base_url
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}page={page_number - 1}"
+
+
+def canadabuys_detail(session, url):
+    response = session.get(url, timeout=(10, 45))
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    main = soup.select_one("main") or soup
+    title_node = main.select_one("h1")
+    title = clean(title_node.get_text(" ", strip=True) if title_node else "")
+    text = clean(main.get_text(" ", strip=True))
+    fields = {}
+    patterns = {
+        "Solicitation Number": r"Solicitation number\s+(.+?)\s+Publication date",
+        "Publication": r"Publication date\s+(\d{4}/\d{2}/\d{2})",
+        "Closing Date": r"Closing date and time\s+(.+?)\s+(?:Last amendment date|Status)",
+        "Status": r"Status\s+Status\s+(.+?)\s+Time to closing",
+        "Notice Type": r"Notice type\s+(.+?)\s+Language",
+        "Location": r"Region\(s\) of delivery\s+(.+?)\s+Procurement method",
+    }
+    for label, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            fields[label] = clean(match.group(1))
+    return title, fields, text[:12000]
+
+
+def canadabuys_items(source, session):
+    """Collect public CanadaBuys tender rows and their public notice details."""
+    page_limit = max(1, int(source.get("page_limit", 5)))
+    page_interval = max(0, float(source.get("page_request_interval_seconds", 1)))
+    detail_limit = max(0, int(source.get("detail_lookup_limit", 100)))
+    detail_interval = max(0, float(source.get("detail_request_interval_seconds", 0.5)))
+    detail_lookups = 0
+    seen_urls = set()
+
+    for page_number in range(1, page_limit + 1):
+        page_url = canadabuys_page_url(source["url"], page_number)
+        response = session.get(page_url, timeout=(10, 45))
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        rows = soup.select("table tbody tr")
+        page_had_new_items = False
+
+        for row in rows:
+            link = row.select_one('a[href*="/tender-opportunities/tender-notice/"]')
+            cells = row.find_all("td")
+            if not link or len(cells) < 5:
+                continue
+            url = urljoin(source["url"], link.get("href", ""))
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            page_had_new_items = True
+            fields = {
+                "Category": clean(cells[1].get_text(" ", strip=True)),
+                "Publication": clean(cells[2].get_text(" ", strip=True)),
+                "Closing Date": clean(cells[3].get_text(" ", strip=True)),
+                "Organization": clean(cells[4].get_text(" ", strip=True)),
+            }
+            item = {
+                "title": clean(link.get_text(" ", strip=True)),
+                "url": url,
+                "published_text": fields["Publication"],
+                "excerpt": clean(row.get_text(" ", strip=True))[:4000],
+            }
+            if detail_lookups < detail_limit:
+                try:
+                    detail_title, detail_fields, detail_text = canadabuys_detail(session, url)
+                    fields.update(detail_fields)
+                    item["title"] = detail_title or item["title"]
+                    item["excerpt"] = detail_text[:4000] or item["excerpt"]
+                except requests.RequestException as exc:
+                    logger.warning("CanadaBuys detail lookup failed for %s: %s", url, exc)
+                detail_lookups += 1
+                time.sleep(detail_interval)
+            yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
+
+        if not rows or not page_had_new_items:
             break
         if page_number < page_limit:
             time.sleep(page_interval)
@@ -505,6 +609,8 @@ def collect(source, session, db=None):
     source_type = source.get("type", "html")
     if source_type == "ottawa_devapps":
         items = ottawa_items(source, session, db)
+    elif source_type == "canadabuys":
+        items = canadabuys_items(source, session)
     elif source_type == "merx" or (source.get("name") or "").lower().startswith("merx"):
         # Also recognize earlier sources.json entries created before the
         # dedicated MERX type was introduced.

@@ -45,7 +45,7 @@ def render_source_page(section):
             ("address", "Address"),
             ("title", "Title A–Z"),
         ]
-    else:
+    elif section == "merx":
         # Keep non-matches available for review; the page defaults to scored
         # physical-security integrator matches.
         rows = db.recent_items_for_source("MERX", relevant_only=False)
@@ -57,6 +57,25 @@ def render_source_page(section):
             ("_Security Match", "Security relevance"),
             ("Solicitation Type", "Solicitation type"),
             ("Location", "Location"),
+        ]
+        sort_options = [
+            ("closing", "Closing soon"),
+            ("publication", "Publication date"),
+            ("newest", "Newest collected"),
+            ("title", "Title A–Z"),
+        ]
+    else:
+        rows = db.recent_items_for_source("CanadaBuys", relevant_only=False)
+        page_title = "CanadaBuys"
+        page_subtitle = "Federal tender opportunities for physical-security integrators"
+        empty_message = "No CanadaBuys tender opportunities have been collected yet."
+        search_placeholder = "Title, department, category, security technology…"
+        filter_fields = [
+            ("_Security Match", "Security relevance"),
+            ("Category", "Category"),
+            ("Organization", "Organization"),
+            ("Notice Type", "Notice type"),
+            ("Location", "Region of delivery"),
         ]
         sort_options = [
             ("closing", "Closing soon"),
@@ -94,6 +113,11 @@ def merx():
     return render_source_page("merx")
 
 
+@bp.get("/canadabuys")
+def canadabuys():
+    return render_source_page("canadabuys")
+
+
 @bp.get("/")
 def home():
     db = current_app.extensions["db"]
@@ -111,6 +135,10 @@ def home():
             {
                 "name": "MERX", "description": "Canada-wide physical-security integration opportunities",
                 "endpoint": "views.merx", "summary": db.source_summary("MERX"),
+            },
+            {
+                "name": "CanadaBuys", "description": "Federal physical-security tender opportunities",
+                "endpoint": "views.canadabuys", "summary": db.source_summary("CanadaBuys"),
             },
         ],
     )
