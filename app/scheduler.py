@@ -27,7 +27,7 @@ class ScrapeScheduler:
             db = self.app.extensions["db"]
             run_id = db.begin_run()
             try:
-                daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 50)
+                daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = scrape_all(self.app.config["DATA_DIR"], db, enrich_item, daily_limit)
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
@@ -51,7 +51,7 @@ class ScrapeScheduler:
             run_id = db.begin_run()
             try:
                 limit = env_int("ENRICHMENT_RETRY_LIMIT", 10)
-                daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 50)
+                daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = retry_failed_enrichments(db, enrich_item, limit, daily_limit)
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
