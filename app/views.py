@@ -27,7 +27,7 @@ def metadata_options(items, field):
 
 def render_source_page(section):
     db = current_app.extensions["db"]
-    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 50)
+    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
     if section == "ottawa":
         rows = db.recent_items_for_source("City of Ottawa")
         page_title = "City of Ottawa"
@@ -121,7 +121,7 @@ def canadabuys():
 @bp.get("/")
 def home():
     db = current_app.extensions["db"]
-    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 50)
+    daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
     return render_template(
         "index.html", section="home",
         groups={"awaiting": [], "enriched": [], "failed": []}, total_items=0,
