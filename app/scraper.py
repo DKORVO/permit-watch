@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import re
 import time
 from pathlib import Path
@@ -7,6 +8,8 @@ from urllib.parse import quote, urljoin
 
 import requests
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = "PermitWatch/0.1 (local civic-information monitor; contact: administrator)"
 
@@ -136,8 +139,8 @@ def merx_items(source, session):
         if detail_lookups < detail_limit and relevant(item, source):
             try:
                 fields.update(merx_detail_fields(session, url))
-            except requests.RequestException:
-                pass
+            except requests.RequestException as exc:
+                logger.warning("MERX detail lookup failed for %s: %s", url, exc)
             detail_lookups += 1
             time.sleep(detail_interval)
         # The detail page has the clean title.  Keep it out of the field list:
@@ -384,10 +387,10 @@ def ottawa_items(source, session, db=None):
                         fields[label] = value
                 if fields["Addresses"]:
                     known_addresses[detail_url] = fields["Addresses"]
-            except (requests.RequestException, ValueError):
+            except (requests.RequestException, ValueError) as exc:
                 # Leave the public list value in place if one detail record is
                 # temporarily unavailable; a later scheduled scrape can retry.
-                pass
+                logger.warning("Ottawa detail lookup failed for %s: %s", number, exc)
             detail_lookups += 1
             time.sleep(detail_interval)
         title = ottawa_title(number, fields["Addresses"], application_type)
@@ -461,7 +464,7 @@ def scrape_all(data_dir, db, enrich, daily_limit=35):
                 # Existing items are refreshed below without calling OpenRouter
                 # again. This keeps a scheduled scrape from consuming quota on
                 # the same historical records every time it runs.
-                if not db.item_exists(item["fingerprint"]):
+                if not db.item_exists(item["fingerprint"], item["url"]):
                     summary, attempted = budgeted_enrich(item, db, enrich, daily_limit, "new finding")
                     if attempted:
                         item["enrichment"] = summary
@@ -526,8 +529,8 @@ def resolve_ottawa_addresses(data_dir, db, limit):
                     ),
                 )
                 resolved += 1
-        except (requests.RequestException, ValueError):
-            pass
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("Ottawa address resolution failed for %s: %s", number, exc)
         time.sleep(0.5)
     remaining = db.ottawa_address_counts()["missing"]
     return {"attempted": len(records), "resolved": resolved, "remaining": remaining}
