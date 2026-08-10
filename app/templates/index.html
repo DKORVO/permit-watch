@@ -49,10 +49,18 @@
     </nav>
     <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
-    <form class="finding-controls" onsubmit="return false;" aria-label="Findings controls">
-      <label>Search <input id="finding-search" type="search" placeholder="Title, address, organization…"></label>
-      <label>Category <select id="status-filter"><option value="all">All categories</option><option value="awaiting">Awaiting Enrichment</option><option value="enriched">Enriched</option><option value="failed">Enrichment Failed</option></select></label>
-      <label>Sort <select id="finding-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="closing">Closing date</option></select></label>
+    <form class="finding-controls" onsubmit="return false;" aria-label="{{ page_title }} findings controls">
+      <label>Search <input id="finding-search" type="search" placeholder="{{ search_placeholder }}"></label>
+      <label>Enrichment <select id="status-filter"><option value="all">All statuses</option><option value="awaiting">Awaiting</option><option value="enriched">Enriched</option><option value="failed">Failed</option></select></label>
+      {% for filter in filters %}
+      <label>{{ filter['label'] }}
+        <select class="metadata-filter" data-field="{{ filter['field'] }}">
+          <option value="all">All</option>
+          {% for option in filter['options'] %}<option value="{{ option|lower }}"{% if section == 'merx' and filter['field'] == '_Security Match' and option == 'matched' %} selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+      <label>Sort <select id="finding-sort">{% for value, label in sort_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
     </form>
 
     {% if latest_run %}
@@ -65,10 +73,10 @@
       <section class="finding-group {{ status }}">
         <h2>{{ title }} <span>{{ groups[status]|length }}</span></h2>
         {% for item in groups[status] %}
-        <article data-status="{{ status }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-title="{{ item['title']|lower }}">
+        <article data-status="{{ status }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-metadata="{{ item['metadata']|tojson|forceescape }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-publication="{{ item['metadata'].get('Publication', item['published_text']) }}" data-received="{{ item['metadata'].get('Date Received', item['published_text']) }}" data-address="{{ item['metadata'].get('Addresses', '')|lower }}" data-title="{{ item['title']|lower }}" data-relevant="{{ item['relevant'] }}">
           <div class="meta"><span>{{ item['source_name'] }}</span>{% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}{% if item['relevant'] %}<b>Relevant</b>{% endif %}</div>
           <h3><a href="{{ item['url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a></h3>
-          <dl class="fields">{% for label, value in item['metadata'].items() if value %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
+          <dl class="fields">{% for label, value in item['metadata'].items() if value and not label.startswith('_') %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
           {% if item['enrichment'] %}<p class="summary">{{ item['enrichment'] }}</p>{% endif %}
           <details><summary>Source excerpt</summary><p>{{ item['excerpt'] }}</p></details>
           <small>Collected {{ item['created_at']|localtime }}</small>
@@ -89,31 +97,46 @@
       const search = document.querySelector('#finding-search');
       const status = document.querySelector('#status-filter');
       const sort = document.querySelector('#finding-sort');
+      const metadataFilters = [...document.querySelectorAll('.metadata-filter')];
       const groups = [...document.querySelectorAll('.finding-group')];
+      const cards = [...document.querySelectorAll('.finding-group article')];
+      cards.forEach(card => {
+        try { card.filterMetadata = JSON.parse(card.dataset.metadata || '{}'); }
+        catch (_) { card.filterMetadata = {}; }
+      });
       const update = () => {
         const term = search.value.trim().toLowerCase();
         groups.forEach(group => {
           const articles = [...group.querySelectorAll('article')];
           articles.forEach(card => {
+            const metadataMismatch = metadataFilters.some(filter => {
+              if (filter.value === 'all') return false;
+              return String(card.filterMetadata[filter.dataset.field] || '').toLowerCase() !== filter.value;
+            });
             card.hidden = (status.value !== 'all' && card.dataset.status !== status.value) ||
-              (term && !card.dataset.search.includes(term));
+              metadataMismatch || (term && !card.dataset.search.includes(term));
           });
           const ordered = articles.sort((a, b) => {
             if (sort.value === 'title') return a.dataset.title.localeCompare(b.dataset.title);
-            if (sort.value === 'oldest') return a.dataset.created.localeCompare(b.dataset.created);
+            if (sort.value === 'address') return a.dataset.address.localeCompare(b.dataset.address);
+            if (sort.value === 'received') return (b.dataset.received || '').localeCompare(a.dataset.received || '');
+            if (sort.value === 'publication') return (b.dataset.publication || '').localeCompare(a.dataset.publication || '');
             if (sort.value === 'closing') return (a.dataset.closing || '9999').localeCompare(b.dataset.closing || '9999');
             return b.dataset.created.localeCompare(a.dataset.created);
           });
           ordered.forEach(card => group.appendChild(card));
-          const shown = articles.some(card => !card.hidden);
-          group.hidden = !shown;
+          const shownCount = articles.filter(card => !card.hidden).length;
+          group.hidden = shownCount === 0;
+          const count = group.querySelector('h2 span');
+          if (count) count.textContent = shownCount;
         });
       };
-      [search, status, sort].forEach(control => control.addEventListener('input', update));
-      status.addEventListener('change', update);
-      sort.addEventListener('change', update);
+      [search, status, sort, ...metadataFilters].forEach(control => {
+        control.addEventListener('input', update);
+        control.addEventListener('change', update);
+      });
+      update();
     })();
-  </script>
-  {% endif %}
+  </script> {% endif %}
 </body>
 </html>
