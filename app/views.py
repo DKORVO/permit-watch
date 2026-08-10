@@ -19,19 +19,15 @@ def grouped_items(items):
 
 def render_source_page(section):
     db = current_app.extensions["db"]
-    items = [dict(item) for item in db.recent_items()]
     if section == "ottawa":
-        # MERX has an "Ottawa opportunities" source name too.  Match the
-        # City feed explicitly so its page cannot include MERX records.
-        items = [
-            item for item in items
-            if (item.get("source_name") or "").lower().startswith("city of ottawa")
-        ]
+        # Fetch this source before categories are grouped.  A global "latest
+        # 100" list can otherwise hide older enriched cards behind newer ones.
+        items = [dict(item) for item in db.recent_items_for_source("City of Ottawa")]
         page_title = "City of Ottawa"
         page_subtitle = "Development applications"
         empty_message = "No City of Ottawa findings have been collected yet."
     else:
-        items = [item for item in items if "merx" in item["source_name"].lower() and item["relevant"]]
+        items = [dict(item) for item in db.recent_items_for_source("MERX")]
         page_title = "MERX"
         page_subtitle = "Ottawa and Gatineau procurement opportunities"
         empty_message = "No Ottawa or Gatineau MERX opportunities have been collected yet."
