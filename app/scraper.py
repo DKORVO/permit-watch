@@ -451,7 +451,7 @@ def collect(source, session, db=None):
         yield item
 
 
-def scrape_all(data_dir, db, enrich, daily_limit=35):
+def scrape_all(data_dir, db, enrich, daily_limit=50):
     sources = load_sources(data_dir)
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
@@ -478,7 +478,7 @@ def scrape_all(data_dir, db, enrich, daily_limit=35):
     return counts
 
 
-def retry_failed_enrichments(db, enrich, limit, daily_limit=35):
+def retry_failed_enrichments(db, enrich, limit, daily_limit=50):
     """Retry a capped number of failed summaries without re-scraping sources."""
     items = db.failed_enrichment_items(limit)
     counts = {"retried": 0, "awaiting": 0, "enriched": 0, "failed": 0, "budget_skipped": 0}
@@ -494,43 +494,3 @@ def retry_failed_enrichments(db, enrich, limit, daily_limit=35):
         counts["retried"] += 1
     return counts
 
-
-def resolve_ottawa_addresses(data_dir, db, limit):
-    """Fill a small batch of missing addresses using Ottawa's public detail API."""
-    if not any(source.get("type") == "ottawa_devapps" for source in load_sources(data_dir)):
-        return {"attempted": 0, "resolved": 0, "remaining": 0}
-    records = db.ottawa_missing_address_items(limit)
-    if not records:
-        return {"attempted": 0, "resolved": 0, "remaining": 0}
-
-    session = requests.Session()
-    session.headers["User-Agent"] = USER_AGENT
-    key = find_ottawa_key(session)
-    resolved = 0
-    for record in records:
-        metadata = record["metadata"]
-        number = clean(str(metadata.get("Application #", "")))
-        if not number:
-            match = re.search(r"/applications/([^/]+)/details$", record["url"])
-            number = match.group(1) if match else ""
-        if not number:
-            continue
-        try:
-            detail = ottawa_detail_fields(session, key, number)
-            if detail.get("Addresses"):
-                metadata.update({label: value for label, value in detail.items() if value})
-                db.update_metadata_and_title(
-                    record["id"],
-                    metadata,
-                    ottawa_title(
-                        clean(str(metadata.get("Application #", ""))),
-                        clean(str(metadata.get("Addresses", ""))),
-                        clean(str(metadata.get("Application", ""))),
-                    ),
-                )
-                resolved += 1
-        except (requests.RequestException, ValueError) as exc:
-            logger.warning("Ottawa address resolution failed for %s: %s", number, exc)
-        time.sleep(0.5)
-    remaining = db.ottawa_address_counts()["missing"]
-    return {"attempted": len(records), "resolved": resolved, "remaining": remaining}
