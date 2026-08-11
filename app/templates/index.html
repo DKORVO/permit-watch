@@ -6,6 +6,9 @@
   <title>{% if section != 'home' %}{{ page_title }} · {% endif %}Watcher</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='watcher-logo.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  {% if section == 'home' %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  {% endif %}
 </head>
 <body>
   <main>
@@ -50,6 +53,16 @@
         </a>
         {% endfor %}
       </div>
+      <section class="map-preview-section">
+        <div class="section-heading">
+          <div><h2>Opportunity map</h2><p>Preview matched findings across Canada.</p></div>
+          <span>{{ map_data['unknown'] }} without a mapped location</span>
+        </div>
+        <a class="map-preview-link" href="{{ url_for('views.opportunity_map') }}" aria-label="Open the interactive opportunity map">
+          <div id="map-preview" aria-hidden="true"></div>
+          <strong>Open interactive map <span aria-hidden="true">→</span></strong>
+        </a>
+      </section>
     </section>
     {% else %}
     <nav class="source-tabs" aria-label="Finding source">
@@ -111,6 +124,31 @@
     {% endif %}
     {% endif %}
   </main>
+  {% if section == 'home' %}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    (() => {
+      const data = {{ map_data|tojson }};
+      const colors = {ottawa: '#175cd3', merx: '#0e7490', canadabuys: '#7c3aed'};
+      const map = L.map('map-preview', {
+        zoomControl: false, attributionControl: true, dragging: false,
+        scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+        keyboard: false, tap: false, touchZoom: false,
+      }).setView([56.2, -96.5], 3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map);
+      data.points.forEach(point => {
+        L.circleMarker([point.lat, point.lng], {
+          radius: Math.min(13, 5 + Math.sqrt(point.count) * 1.6),
+          color: '#fff', weight: 2,
+          fillColor: colors[point.source_group] || '#475467', fillOpacity: .9,
+        }).addTo(map);
+      });
+    })();
+  </script>
+  {% endif %}
   {% if section != 'home' %}
   <script>
     (() => {
