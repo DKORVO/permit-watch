@@ -21,7 +21,7 @@ class OpportunityMapTests(unittest.TestCase):
         point = data["points"][0]
         self.assertEqual(point["source_group"], "merx")
         self.assertEqual(point["location"], "Ottawa, Ontario")
-        self.assertFalse(point["approximate"])
+        self.assertFalse(point["approximate"])\n        self.assertEqual(point["items"][0]["enrichment_status"], "awaiting")
 
     def test_falls_back_to_approximate_province_location(self):
         data = build_map_points([
