@@ -125,7 +125,7 @@ def render_source_page(section):
         filters.append({"field": field, "label": label, "options": options})
 
     return render_template(
-        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(),
+        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(page_title),
         section=section, page_title=page_title, page_subtitle=page_subtitle,
         empty_message=empty_message, search_placeholder=search_placeholder,
         filters=filters, sort_options=sort_options,
