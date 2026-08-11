@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import json
 import logging
 import re
@@ -32,14 +34,11 @@ MERX_SOURCES = [
 
 CANADABUYS_SOURCE = {
     "name": "CanadaBuys — tender opportunities",
-    "url": "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=1920&status%5B1%5D=87",
+    "url": "https://canadabuys.canada.ca/opendata/pub/openTenderNotice-ouvertAvisAppelOffres.csv",
+    "landing_url": "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=87",
     "type": "canadabuys",
     "enabled": True,
     "min_request_interval_seconds": 5,
-    "page_limit": 1,
-    "page_request_interval_seconds": 1,
-    "detail_lookup_limit": 100,
-    "detail_request_interval_seconds": 0.5,
     "relevance_profile": "physical_security_integrator",
     "minimum_relevance_score": 6,
 }
@@ -238,107 +237,87 @@ def merx_items(source, session):
             time.sleep(page_interval)
 
 
-def canadabuys_page_url(base_url, page_number):
-    """CanadaBuys uses zero-based Drupal page numbers after the first page."""
-    if page_number == 1:
-        return base_url
-    separator = "&" if "?" in base_url else "?"
-    return f"{base_url}{separator}page={page_number - 1}"
-
-
-def canadabuys_detail(session, url):
-    response = session.get(url, timeout=(10, 45))
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    main = soup.select_one("main") or soup
-    title_node = main.select_one("h1")
-    title = clean(title_node.get_text(" ", strip=True) if title_node else "")
-    text = clean(main.get_text(" ", strip=True))
-    fields = {}
-    patterns = {
-        "Solicitation Number": r"Solicitation number\s+(.+?)\s+Publication date",
-        "Publication": r"Publication date\s+(\d{4}/\d{2}/\d{2})",
-        "Closing Date": r"Closing date and time\s+(.+?)\s+(?:Last amendment date|Status)",
-        "Status": r"Status\s+Status\s+(.+?)\s+Time to closing",
-        "Notice Type": r"Notice type\s+(.+?)\s+Language",
-        "Location": r"Region\(s\) of delivery\s+(.+?)\s+Procurement method",
-    }
-    for label, pattern in patterns.items():
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            fields[label] = clean(match.group(1))
-    return title, fields, text[:12000]
+def canadabuys_csv_value(row, *prefixes):
+    """Read a bilingual CanadaBuys CSV field without coupling to French labels."""
+    for prefix in prefixes:
+        if prefix in row and clean(row[prefix]):
+            return clean(row[prefix])
+        lowered = prefix.lower()
+        for label, value in row.items():
+            if (label or "").lower().startswith(lowered) and clean(value):
+                return clean(value)
+    return ""
 
 
 def canadabuys_items(source, session):
-    """Collect public CanadaBuys tender rows and their public notice details."""
-    page_limit = max(1, int(source.get("page_limit", 5)))
-    page_interval = max(0, float(source.get("page_request_interval_seconds", 1)))
-    detail_limit = max(0, int(source.get("detail_lookup_limit", 100)))
-    detail_interval = max(0, float(source.get("detail_request_interval_seconds", 0.5)))
-    detail_lookups = 0
-    seen_urls = set()
+    """Collect all official open federal tender notices from the CSV feed."""
+    response = session.get(source["url"], timeout=(10, 90))
+    response.raise_for_status()
+    text = response.content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = reader.fieldnames or []
+    if not any((name or "").lower().startswith("title-titre-") for name in fieldnames):
+        raise ValueError("CanadaBuys open-data CSV title column was not found")
 
-    for page_number in range(1, page_limit + 1):
-        page_url = canadabuys_page_url(source["url"], page_number)
-        try:
-            response = session.get(page_url, timeout=(10, 45))
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            if page_number == 1:
-                raise
-            # CanadaBuys can reject automated pagination even after serving
-            # the first page. Keep those results and try again next run.
-            logger.warning(
-                "CanadaBuys pagination stopped at page %s after %s: %s",
-                page_number,
-                page_url,
-                exc,
-            )
-            break
-        soup = BeautifulSoup(response.text, "html.parser")
-        rows = soup.select("table tbody tr")
-        page_had_new_items = False
+    categories = {
+        "CNST": "Construction",
+        "GD": "Goods",
+        "SRV": "Services",
+        "SVRTGD": "Services related to goods",
+    }
+    landing_url = source.get(
+        "landing_url",
+        "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=87",
+    )
 
-        for row in rows:
-            link = row.select_one('a[href*="/tender-opportunities/tender-notice/"]')
-            cells = row.find_all("td")
-            if not link or len(cells) < 5:
-                continue
-            url = urljoin(source["url"], link.get("href", ""))
-            if not url or url in seen_urls:
-                continue
-            seen_urls.add(url)
-            page_had_new_items = True
-            fields = {
-                "Category": clean(cells[1].get_text(" ", strip=True)),
-                "Publication": clean(cells[2].get_text(" ", strip=True)),
-                "Closing Date": clean(cells[3].get_text(" ", strip=True)),
-                "Organization": clean(cells[4].get_text(" ", strip=True)),
-            }
-            item = {
-                "title": clean(link.get_text(" ", strip=True)),
-                "url": url,
-                "published_text": fields["Publication"],
-                "excerpt": clean(row.get_text(" ", strip=True))[:4000],
-            }
-            if detail_lookups < detail_limit:
-                try:
-                    detail_title, detail_fields, detail_text = canadabuys_detail(session, url)
-                    fields.update(detail_fields)
-                    item["title"] = detail_title or item["title"]
-                    item["excerpt"] = detail_text[:4000] or item["excerpt"]
-                except requests.RequestException as exc:
-                    logger.warning("CanadaBuys detail lookup failed for %s: %s", url, exc)
-                detail_lookups += 1
-                time.sleep(detail_interval)
-            yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
+    for row_number, row in enumerate(reader, start=1):
+        title = canadabuys_csv_value(row, "title-titre-eng", "title-titre-fra")
+        reference = canadabuys_csv_value(row, "referenceNumber")
+        solicitation = canadabuys_csv_value(row, "solicitationNumber")
+        status = canadabuys_csv_value(row, "tenderStatus")
+        if not title or (status and status.lower() != "open"):
+            continue
 
-        if not rows or not page_had_new_items:
-            break
-        if page_number < page_limit:
-            time.sleep(page_interval)
-
+        notice_url = canadabuys_csv_value(row, "noticeURL", "noticeUrl")
+        identity = reference or solicitation or str(row_number)
+        url = notice_url or f"{landing_url}#notice-{quote(identity, safe='')}"
+        description = canadabuys_csv_value(
+            row, "tenderDescription-descriptionAppelOffres-eng",
+            "tenderDescription-descriptionAppelOffres-fra",
+        )
+        category_code = canadabuys_csv_value(row, "procurementCategory")
+        publication = canadabuys_csv_value(row, "publicationDate")
+        closing = canadabuys_csv_value(row, "tenderClosingDate")
+        organization = canadabuys_csv_value(
+            row, "contractingEntityName", "endUserEntityName"
+        )
+        fields = {
+            "Category": categories.get(category_code, category_code),
+            "Publication": publication,
+            "Closing Date": closing,
+            "Organization": organization,
+            "Status": status,
+            "Notice Type": canadabuys_csv_value(row, "noticeType"),
+            "Location": canadabuys_csv_value(
+                row, "regionsOfDelivery", "regionsOfOpportunity"
+            ),
+            "Solicitation Number": solicitation,
+            "Reference Number": reference,
+            "UNSPSC": canadabuys_csv_value(row, "unspsc"),
+            "UNSPSC Description": canadabuys_csv_value(row, "unspscDescription-eng"),
+            "Contact": canadabuys_csv_value(row, "contactInfoName"),
+            "Contact Email": canadabuys_csv_value(row, "contactInfoEmail"),
+        }
+        excerpt = description or " ".join(value for value in fields.values() if value)
+        yield {
+            "title": title,
+            "url": url,
+            "published_text": publication,
+            "excerpt": clean(excerpt)[:4000],
+            "metadata": json.dumps(
+                {label: value for label, value in fields.items() if value}
+            ),
+        }
 
 def rss_items(source, session):
     response = session.get(source["url"], timeout=(10, 45))
