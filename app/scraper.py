@@ -49,17 +49,19 @@ LEGACY_MERX_SOURCE_NAMES = {
 }
 
 PHYSICAL_SECURITY_TERMS = (
-    "access control", "card reader", "credential system", "cctv",
-    "video surveillance", "security camera", "intrusion detection",
-    "intrusion alarm", "burglar alarm", "intercom", "video intercom",
-    "duress alarm", "panic alarm", "electronic security",
-    "integrated security system", "physical security system",
-    "perimeter detection", "security management system",
+    "access control", "card reader", "card readers", "credential system", "cctv",
+    "video surveillance", "security camera", "security cameras", "intrusion detection",
+    "intrusion alarm", "intrusion alarms", "burglar alarm", "intercom", "video intercom",
+    "duress alarm", "panic alarm", "electronic security", "electronic security system",
+    "electronic security systems", "integrated security system",
+    "integrated security systems", "physical security system", "physical security systems",
+    "perimeter detection", "perimeter security", "security management system",
 )
 SECURITY_WORK_TERMS = (
-    "integrator", "integration", "supply and install", "installation",
-    "replacement", "upgrade", "retrofit", "commissioning", "programming",
-    "maintenance", "repair", "support", "design-build",
+    "integrator", "integration", "supply and install", "supply", "install",
+    "installation", "replace", "replacement", "upgrade", "retrofit",
+    "modernization", "commissioning", "programming", "maintenance", "repair",
+    "support", "design-build",
 )
 SECURITY_BRANDS = (
     "genetec", "lenel", "avigilon", "milestone", "kantech", "axis",
