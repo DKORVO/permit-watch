@@ -140,8 +140,9 @@
         attribution: '&copy; OpenStreetMap contributors',
       }).addTo(map);
       data.points.forEach(point => {
+        if (!point.matched_count) return;
         L.circleMarker([point.lat, point.lng], {
-          radius: Math.min(13, 5 + Math.sqrt(point.count) * 1.6),
+          radius: Math.min(13, 5 + Math.sqrt(point.matched_count) * 1.6),
           color: '#fff', weight: 2,
           fillColor: colors[point.source_group] || '#475467', fillOpacity: .9,
         }).addTo(map);
