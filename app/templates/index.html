@@ -42,6 +42,7 @@
         <a class="source-card" href="{{ url_for(source['endpoint']) }}">
           <strong>{{ source['name'] }}</strong><span>{{ source['description'] }}</span>
           <span class="source-total">{{ source['summary']['total'] }} findings</span>
+          {% if source['show_matches'] %}<span class="source-matched">{{ source['summary']['matched'] }} matched results</span>{% endif %}
           <span class="status-counts"><b>{{ source['summary']['enriched'] }} enriched</b><b>{{ source['summary']['awaiting'] }} awaiting</b><b>{{ source['summary']['failed'] }} failed</b></span>
           {% if source['summary']['latest_collected'] %}<small>Latest finding: {{ source['summary']['latest_collected']|localtime }}</small>{% endif %}
         </a>
