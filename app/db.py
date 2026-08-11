@@ -53,6 +53,11 @@ class Database:
                         ELSE 'enriched'
                     END
                 """)
+            run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+            if "source_scope" not in run_columns:
+                conn.execute(
+                    "ALTER TABLE runs ADD COLUMN source_scope TEXT NOT NULL DEFAULT 'All sources'"
+                )
 
     def add_item(self, item):
         with self.connection() as conn:
@@ -160,6 +165,22 @@ class Database:
                 ORDER BY id ASC LIMIT ?
             """, (limit,)).fetchall()
 
+    def enrichment_items_by_ids(self, item_ids, source_prefix):
+        """Return selected findings only when they belong to the active tab."""
+        ids = sorted({int(item_id) for item_id in item_ids if int(item_id) > 0})
+        if not ids:
+            return []
+        placeholders = ", ".join("?" for _ in ids)
+        with self.connection() as conn:
+            return conn.execute(
+                f"""
+                SELECT * FROM items
+                WHERE id IN ({placeholders}) AND LOWER(source_name) LIKE ?
+                ORDER BY id ASC
+                """,
+                (*ids, f"{source_prefix.lower()}%"),
+            ).fetchall()
+
     def update_enrichment(self, item_id, summary, status):
         with self.connection() as conn:
             conn.execute(
@@ -167,14 +188,22 @@ class Database:
                 (summary, status, item_id),
             )
 
-    def begin_run(self):
+    def begin_run(self, source_scope="All sources"):
         with self.connection() as conn:
-            return conn.execute("INSERT INTO runs(status) VALUES ('running')").lastrowid
+            return conn.execute(
+                "INSERT INTO runs(status, source_scope) VALUES ('running', ?)",
+                (source_scope,),
+            ).lastrowid
 
     def finish_run(self, run_id, status, message):
         with self.connection() as conn:
             conn.execute("UPDATE runs SET finished_at=CURRENT_TIMESTAMP, status=?, message=? WHERE id=?", (status, message, run_id))
 
-    def latest_run(self):
+    def latest_run(self, source_scope=None):
         with self.connection() as conn:
+            if source_scope:
+                return conn.execute(
+                    "SELECT * FROM runs WHERE source_scope = ? ORDER BY id DESC LIMIT 1",
+                    (source_scope,),
+                ).fetchone()
             return conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()

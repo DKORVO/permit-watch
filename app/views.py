@@ -1,9 +1,39 @@
 import json
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
 
 from .config import env_int
 
 bp = Blueprint("views", __name__)
+
+SOURCE_ACTIONS = {
+    "ottawa": {
+        "source_type": "ottawa_devapps",
+        "source_prefix": "City of Ottawa",
+        "label": "City of Ottawa",
+        "endpoint": "views.ottawa",
+    },
+    "merx": {
+        "source_type": "merx",
+        "source_prefix": "MERX",
+        "label": "MERX",
+        "endpoint": "views.merx",
+    },
+    "canadabuys": {
+        "source_type": "canadabuys",
+        "source_prefix": "CanadaBuys",
+        "label": "CanadaBuys",
+        "endpoint": "views.canadabuys",
+    },
+}
+
+
+def source_action():
+    section = request.form.get("section", "")
+    action = SOURCE_ACTIONS.get(section)
+    if not action:
+        abort(400, "A valid source tab is required")
+    return section, action
+
 
 def grouped_items(items):
     groups = {"awaiting": [], "enriched": [], "failed": []}
@@ -95,7 +125,7 @@ def render_source_page(section):
         filters.append({"field": field, "label": label, "options": options})
 
     return render_template(
-        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(),
+        "index.html", groups=groups, total_items=len(items), latest_run=db.latest_run(page_title),
         section=section, page_title=page_title, page_subtitle=page_subtitle,
         empty_message=empty_message, search_placeholder=search_placeholder,
         filters=filters, sort_options=sort_options,
@@ -146,25 +176,46 @@ def home():
 
 @bp.post("/run-now")
 def run_now():
-    current_app.extensions["scraper_scheduler"].scheduler.add_job(
-        current_app.extensions["scraper_scheduler"].run,
+    section, action = source_action()
+    scraper_scheduler = current_app.extensions["scraper_scheduler"]
+    scraper_scheduler.scheduler.add_job(
+        scraper_scheduler.run,
         "date",
-        id="manual-scrape",
+        id=f"manual-scrape-{section}",
         replace_existing=True,
+        kwargs={
+            "source_type": action["source_type"],
+            "source_label": action["label"],
+        },
     )
-    return redirect(request.referrer or url_for("views.ottawa"))
+    return redirect(url_for(action["endpoint"]))
 
 
-@bp.post("/retry-enrichment")
-def retry_enrichment():
-    scheduler = current_app.extensions["scraper_scheduler"].scheduler
-    scheduler.add_job(
-        current_app.extensions["scraper_scheduler"].retry_failed_enrichments,
+@bp.post("/enrich-selected")
+def enrich_selected():
+    section, action = source_action()
+    try:
+        item_ids = list(dict.fromkeys(int(value) for value in request.form.getlist("item_id")))
+    except ValueError:
+        abort(400, "Finding IDs must be integers")
+    if not item_ids or any(item_id <= 0 for item_id in item_ids):
+        abort(400, "Select at least one finding")
+    if len(item_ids) > 100:
+        abort(400, "Select no more than 100 findings at a time")
+
+    scraper_scheduler = current_app.extensions["scraper_scheduler"]
+    scraper_scheduler.scheduler.add_job(
+        scraper_scheduler.enrich_selected,
         "date",
-        id="retry-enrichment",
+        id=f"enrich-selected-{section}",
         replace_existing=True,
+        kwargs={
+            "item_ids": item_ids,
+            "source_prefix": action["source_prefix"],
+            "source_label": action["label"],
+        },
     )
-    return redirect(request.referrer or url_for("views.ottawa"))
+    return redirect(url_for(action["endpoint"]))
 
 @bp.get("/healthz")
 def healthz():

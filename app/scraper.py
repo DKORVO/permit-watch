@@ -657,8 +657,18 @@ def collect(source, session, db=None):
         yield item
 
 
-def scrape_all(data_dir, db, enrich, daily_limit=100):
-    sources = load_sources(data_dir)
+def source_matches(source, source_type):
+    """Return whether a configured source belongs to a tab-specific run."""
+    if not source_type:
+        return True
+    configured_type = source.get("type", "html")
+    if source_type == "merx":
+        return configured_type == "merx" or (source.get("name") or "").lower().startswith("merx")
+    return configured_type == source_type
+
+
+def scrape_all(data_dir, db, enrich, daily_limit=100, source_type=None):
+    sources = [source for source in load_sources(data_dir) if source_matches(source, source_type)]
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
     counts = {"seen": 0, "new": 0, "relevant": 0, "budget_skipped": 0}
@@ -681,6 +691,32 @@ def scrape_all(data_dir, db, enrich, daily_limit=100):
                 counts["new"] += 1
         if index < len(sources) - 1:
             time.sleep(max(1, int(source.get("min_request_interval_seconds", 5))))
+    return counts
+
+
+def enrich_selected_items(db, enrich, item_ids, source_prefix, daily_limit=100):
+    """Enrich only user-selected findings from the active source tab."""
+    items = db.enrichment_items_by_ids(item_ids, source_prefix)
+    counts = {
+        "selected": len(items),
+        "attempted": 0,
+        "awaiting": 0,
+        "enriched": 0,
+        "failed": 0,
+        "budget_skipped": 0,
+    }
+    for index, row in enumerate(items):
+        item = dict(row)
+        summary, attempted = budgeted_enrich(
+            item, db, enrich, daily_limit, f"selected finding {item['id']}"
+        )
+        if not attempted:
+            counts["budget_skipped"] = len(items) - index
+            break
+        status = enrichment_status(summary)
+        db.update_enrichment(item["id"], summary, status)
+        counts[status] += 1
+        counts["attempted"] += 1
     return counts
 
 
