@@ -63,6 +63,8 @@ def geocode_map_locations(db, api_key, limit=100, session=None):
     queries = []
     seen = set()
     batch_limit = min(500, max(0, int(limit)))
+    if batch_limit == 0:
+        return {"requested": 0, "resolved": 0, "unresolved": 0}
 
     for row in db.map_items():
         item = dict(row)
