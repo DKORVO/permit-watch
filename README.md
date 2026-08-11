@@ -18,6 +18,17 @@ TrueNAS 26 documentation is for **SCALE**, not the legacy FreeBSD-based CORE. In
 
 Set `OPENROUTER_API_KEY` as a secret/environment value in the TrueNAS app form (or an untracked `.env` for local Docker), never in `sources.json`. Map placement uses local Canadian city coordinates first and the City of Ottawa's official address locator for Ottawa applications. For unfamiliar MERX or CanadaBuys cities, optionally set `GEOAPIFY_API_KEY` to a free Geoapify key. After each scrape, Watcher permanently caches up to `GEOCODING_BATCH_LIMIT` new public locations (default 100, maximum 500), so previously resolved locations do not consume another request. Expose the service only to a trusted LAN, or put it behind an authenticated reverse proxy/VPN. This starter intentionally has no application login.
 
+### Daily matched-opportunity email
+
+Watcher can email a cursor-based daily digest of newly collected matched MERX and CanadaBuys opportunities. It is disabled until all required values are configured in TrueNAS:
+
+- `SMTP_HOST`
+- `SMTP_USERNAME` and `SMTP_PASSWORD` when authentication is required
+- `DIGEST_EMAIL_FROM` (optional when the SMTP username is also the sender)
+- `DIGEST_EMAIL_TO` (one or more comma-separated recipients)
+
+Optional settings are `SMTP_PORT` (default `587`), `SMTP_STARTTLS` (default `true`), `DIGEST_HOUR` (default `8`), and `DIGEST_MINUTE` (default `0`). The schedule uses `DISPLAY_TIMEZONE`. The SQLite cursor advances only after delivery succeeds, preventing skipped matches after transient SMTP failures.
+
 ### Recommended: automatic GitHub builds
 
 For a TrueNAS deployment that does not require Docker Desktop or manual image uploads, use the included GitHub Actions workflow. It builds and publishes `ghcr.io/mrkorvo/permit-watch:stable` whenever the GitHub project changes. Follow [`GITHUB-SETUP.md`](GITHUB-SETUP.md) once, then use [`truenas-ghcr.compose.yaml`](truenas-ghcr.compose.yaml) in TrueNAS. Keep `OPENROUTER_API_KEY` in TrueNAS only.
