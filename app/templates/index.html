@@ -16,10 +16,16 @@
         </div>
       </div>
       <div class="actions">
-        {% if section != 'home' %}<a class="button-link secondary icon-button" href="{{ url_for('views.home') }}" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></a>{% endif %}
-        <form method="post" action="{{ url_for('views.run_now') }}"><button>Run now</button></form>
-        {% if groups['failed'] %}
-        <form method="post" action="{{ url_for('views.retry_enrichment') }}"><button class="secondary">Retry enrichment ({{ groups['failed']|length }})</button></form>
+        {% if section != 'home' %}
+        <a class="button-link secondary icon-button" href="{{ url_for('views.home') }}" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></a>
+        <form method="post" action="{{ url_for('views.run_now') }}">
+          <input type="hidden" name="section" value="{{ section }}">
+          <button>Run {{ page_title }}</button>
+        </form>
+        <form id="enrichment-form" method="post" action="{{ url_for('views.enrich_selected') }}">
+          <input type="hidden" name="section" value="{{ section }}">
+          <button id="enrich-selected" class="secondary" disabled>Enrich selected (<span>0</span>)</button>
+        </form>
         {% endif %}
       </div>
     </header>
@@ -75,6 +81,7 @@
         <h2>{{ title }} <span>{{ groups[status]|length }}</span></h2>
         {% for item in groups[status] %}
         <article data-status="{{ status }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-metadata="{{ item['metadata']|tojson|forceescape }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-publication="{{ item['metadata'].get('Publication', item['published_text']) }}" data-received="{{ item['metadata'].get('Date Received', item['published_text']) }}" data-address="{{ item['metadata'].get('Addresses', '')|lower }}" data-title="{{ item['title']|lower }}" data-relevant="{{ item['relevant'] }}">
+          <label class="finding-select"><input class="enrichment-select" type="checkbox" name="item_id" value="{{ item['id'] }}" form="enrichment-form"> Select for enrichment</label>
           <div class="meta"><span>{{ item['source_name'] }}</span>{% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}{% if item['relevant'] %}<b>Relevant</b>{% endif %}</div>
           <h3><a href="{{ item['url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a></h3>
           <dl class="fields">{% for label, value in item['metadata'].items() if value and not label.startswith('_') %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
@@ -101,6 +108,15 @@
       const metadataFilters = [...document.querySelectorAll('.metadata-filter')];
       const groups = [...document.querySelectorAll('.finding-group')];
       const cards = [...document.querySelectorAll('.finding-group article')];
+      const selections = [...document.querySelectorAll('.enrichment-select')];
+      const enrichButton = document.querySelector('#enrich-selected');
+      const enrichCount = enrichButton.querySelector('span');
+      const updateSelection = () => {
+        const selected = selections.filter(control => control.checked).length;
+        enrichCount.textContent = selected;
+        enrichButton.disabled = selected === 0;
+      };
+      selections.forEach(control => control.addEventListener('change', updateSelection));
       cards.forEach(card => {
         try { card.filterMetadata = JSON.parse(card.dataset.metadata || '{}'); }
         catch (_) { card.filterMetadata = {}; }
@@ -137,6 +153,7 @@
         control.addEventListener('change', update);
       });
       update();
+      updateSelection();
     })();
   </script> {% endif %}
 </body>
