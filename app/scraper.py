@@ -79,6 +79,18 @@ def load_sources(data_dir: Path):
     sources = config.get("sources", [])
     if not isinstance(sources, list):
         raise ValueError("sources.json must contain a 'sources' list")
+    # Existing deployments may still point the CanadaBuys connector at the
+    # paginated website. This connector now consumes the official CSV feed.
+    sources = [
+        {
+            **source,
+            "url": CANADABUYS_SOURCE["url"],
+            "landing_url": CANADABUYS_SOURCE["landing_url"],
+        }
+        if source.get("type") == "canadabuys"
+        else source
+        for source in sources
+    ]
     # Replace the legacy Ottawa/Gatineau defaults with the nationwide source.
     sources = [source for source in sources if source.get("name") not in LEGACY_MERX_SOURCE_NAMES]
     source_names = {source.get("name") for source in sources}
