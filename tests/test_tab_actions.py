@@ -71,6 +71,21 @@ class RunScopeTests(unittest.TestCase):
             self.assertEqual(db.latest_run("CanadaBuys")["message"], "CanadaBuys failed")
             self.assertEqual(db.latest_run()["source_scope"], "CanadaBuys")
 
+    def test_waiting_action_remains_queued_instead_of_erroring(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "watcher.db")
+            db.initialize()
+            run_id = db.queue_run("CanadaBuys", "CanadaBuys run queued")
+
+            db.keep_run_queued(
+                run_id, "CanadaBuys queued — waiting for another job to finish"
+            )
+
+            latest = db.latest_run("CanadaBuys")
+            self.assertEqual(latest["status"], "queued")
+            self.assertIsNone(latest["finished_at"])
+            self.assertIn("waiting for another job", latest["message"])
+
     def test_queued_run_transitions_to_running_and_success(self):
         with tempfile.TemporaryDirectory() as directory:
             db = Database(Path(directory) / "watcher.db")
