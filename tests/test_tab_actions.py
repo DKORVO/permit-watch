@@ -58,6 +58,32 @@ class SelectedEnrichmentTests(unittest.TestCase):
 
 
 class RunScopeTests(unittest.TestCase):
+    def test_source_summary_reports_total_and_matched_findings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "watcher.db")
+            db.initialize()
+            for identifier, relevant in ((1, 1), (2, 0)):
+                db.add_item(
+                    {
+                        "source_name": "MERX — Canada opportunities",
+                        "title": f"Finding {identifier}",
+                        "url": f"https://example.test/{identifier}",
+                        "published_text": "",
+                        "excerpt": "",
+                        "fingerprint": f"fingerprint-{identifier}",
+                        "relevant": relevant,
+                        "enrichment": None,
+                        "metadata": None,
+                        "enrichment_status": "awaiting",
+                    }
+                )
+
+            summary = db.source_summary("MERX")
+
+            self.assertEqual(summary["total"], 2)
+            self.assertEqual(summary["matched"], 1)
+            self.assertEqual(summary["awaiting"], 1)
+
     def test_latest_run_is_scoped_to_tab(self):
         with tempfile.TemporaryDirectory() as directory:
             db = Database(Path(directory) / "watcher.db")
