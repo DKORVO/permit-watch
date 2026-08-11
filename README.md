@@ -16,7 +16,7 @@ Nginx terminates HTTP and serves the Flask UI. Gunicorn runs exactly **one worke
 
 TrueNAS 26 documentation is for **SCALE**, not the legacy FreeBSD-based CORE. In **Apps → Discover → more menu → Install via YAML**, create a dedicated dataset (for example `tank/apps/permit-watch`) and use `docker-compose.yml` after changing the host-path volume and published port as needed. The same image also runs on any normal Docker host.
 
-Set `OPENROUTER_API_KEY` as a secret/environment value in the TrueNAS app form (or an untracked `.env` for local Docker), never in `sources.json`. Expose the service only to a trusted LAN, or put it behind an authenticated reverse proxy/VPN. This starter intentionally has no application login.
+Set `OPENROUTER_API_KEY` as a secret/environment value in the TrueNAS app form (or an untracked `.env` for local Docker), never in `sources.json`. To improve map placement, also set `GEOAPIFY_API_KEY` to a Geoapify key. After each scrape, Watcher geocodes and permanently caches up to `GEOCODING_BATCH_LIMIT` new public locations (default 100, maximum 500), so previously resolved locations do not consume another request. Expose the service only to a trusted LAN, or put it behind an authenticated reverse proxy/VPN. This starter intentionally has no application login.
 
 ### Recommended: automatic GitHub builds
 
