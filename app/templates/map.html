@@ -15,23 +15,26 @@
         <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo.png') }}" alt="">
         <div><h1>Watcher</h1><p>Public-notice monitor · verify findings at the source</p></div>
       </div>
-      <div class="actions">
-        <a class="button-link secondary" href="{{ url_for('views.home') }}">Back to dashboard</a>
-      </div>
+      <div class="actions"><a class="button-link secondary" href="{{ url_for('views.home') }}">Back to dashboard</a></div>
     </header>
 
     <section class="map-page">
       <div class="page-heading map-page-heading">
-        <div><h2>Opportunity map</h2><p>Mapped, matched opportunities from every monitored source.</p></div>
+        <div><h2>Opportunity map</h2><p>Search and filter findings from every monitored source.</p></div>
         <div class="map-stat"><strong>{{ map_data['points']|sum(attribute='count') }}</strong> mapped · <strong>{{ map_data['unknown'] }}</strong> unknown</div>
       </div>
+      <div class="map-controls" role="search">
+        <label class="map-search"><span>Search</span><input id="map-search" type="search" placeholder="Title, location, or source…" autocomplete="off"></label>
+        <label><span>Security relevance</span><select id="map-relevance"><option value="matched" selected>Matched</option><option value="all">All findings</option><option value="other">Other</option></select></label>
+        <label><span>Enrichment</span><select id="map-enrichment"><option value="all">All statuses</option><option value="awaiting">Awaiting</option><option value="enriched">Enriched</option><option value="failed">Failed</option></select></label>
+        <label><span>Source</span><select id="map-source"><option value="all">All sources</option><option value="ottawa">City of Ottawa</option><option value="merx">MERX</option><option value="canadabuys">CanadaBuys</option></select></label>
+        <div class="map-control-footer"><button id="map-clear" type="button" class="button-link secondary">Clear</button><strong id="map-result-count" aria-live="polite"></strong></div>
+      </div>
       <div class="map-legend" aria-label="Map legend">
-        <span><i class="ottawa"></i>City of Ottawa</span>
-        <span><i class="merx"></i>MERX</span>
-        <span><i class="canadabuys"></i>CanadaBuys</span>
+        <span><i class="ottawa"></i>City of Ottawa</span><span><i class="merx"></i>MERX</span><span><i class="canadabuys"></i>CanadaBuys</span>
         <small>Province-only locations are approximate.</small>
       </div>
-      <div id="opportunity-map" aria-label="Interactive map of matched opportunities"></div>
+      <div id="opportunity-map" aria-label="Interactive map of opportunities"></div>
     </section>
   </main>
 
@@ -44,75 +47,87 @@
         merx: {label: 'MERX', color: '#0e7490'},
         canadabuys: {label: 'CanadaBuys', color: '#7c3aed'},
       };
+      const controls = {
+        search: document.getElementById('map-search'),
+        relevance: document.getElementById('map-relevance'),
+        enrichment: document.getElementById('map-enrichment'),
+        source: document.getElementById('map-source'),
+        count: document.getElementById('map-result-count'),
+      };
       const map = L.map('opportunity-map').setView([56.2, -96.5], 4);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors',
-      }).addTo(map);
-
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
       const layers = {};
-      Object.entries(styles).forEach(([key, style]) => {
-        layers[key] = L.layerGroup().addTo(map);
-      });
-      const bounds = [];
+      Object.keys(styles).forEach(key => { layers[key] = L.layerGroup().addTo(map); });
 
-      const popupFor = point => {
+      const popupFor = (point, items) => {
         const root = document.createElement('div');
         root.className = 'map-popup';
         const heading = document.createElement('strong');
-        heading.textContent = `${point.location} · ${point.count} finding${point.count === 1 ? '' : 's'}`;
+        heading.textContent = `${point.location} · ${items.length} finding${items.length === 1 ? '' : 's'}`;
         root.appendChild(heading);
         const source = document.createElement('small');
         source.textContent = styles[point.source_group]?.label || point.source;
         root.appendChild(source);
         const list = document.createElement('ul');
-        point.items.forEach(item => {
+        items.forEach(item => {
           const row = document.createElement('li');
           const link = document.createElement('a');
-          link.href = item.url;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = item.title;
+          link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = item.title;
           row.appendChild(link);
-          if (item.closing) {
-            const closing = document.createElement('span');
-            closing.textContent = `Closes ${item.closing}`;
-            row.appendChild(closing);
-          }
+          const detail = document.createElement('span');
+          detail.textContent = [item.closing ? `Closes ${item.closing}` : '', item.enrichment_status].filter(Boolean).join(' · ');
+          if (detail.textContent) row.appendChild(detail);
           list.appendChild(row);
         });
         root.appendChild(list);
-        if (point.count > point.items.length) {
-          const more = document.createElement('em');
-          more.textContent = `+${point.count - point.items.length} more at this location`;
-          root.appendChild(more);
-        }
         if (point.approximate) {
-          const note = document.createElement('em');
-          note.textContent = 'Approximate province-level location';
-          root.appendChild(note);
+          const note = document.createElement('em'); note.textContent = 'Approximate location'; root.appendChild(note);
         }
         return root;
       };
 
-      data.points.forEach(point => {
-        const style = styles[point.source_group] || {color: '#475467'};
-        const marker = L.circleMarker([point.lat, point.lng], {
-          radius: Math.min(15, 6 + Math.sqrt(point.count) * 1.8),
-          color: '#fff', weight: 2,
-          fillColor: style.color, fillOpacity: .9,
+      let fitted = false;
+      const renderMarkers = () => {
+        Object.values(layers).forEach(layer => layer.clearLayers());
+        const query = controls.search.value.trim().toLowerCase();
+        const relevance = controls.relevance.value;
+        const enrichment = controls.enrichment.value;
+        const sourceFilter = controls.source.value;
+        const bounds = [];
+        let total = 0;
+        data.points.forEach(point => {
+          if (sourceFilter !== 'all' && point.source_group !== sourceFilter) return;
+          const items = point.items.filter(item => {
+            if (relevance === 'matched' && !item.relevant) return false;
+            if (relevance === 'other' && item.relevant) return false;
+            if (enrichment !== 'all' && item.enrichment_status !== enrichment) return false;
+            const haystack = `${item.title} ${item.source} ${point.location}`.toLowerCase();
+            return !query || haystack.includes(query);
+          });
+          if (!items.length) return;
+          const style = styles[point.source_group] || {color: '#475467'};
+          const marker = L.circleMarker([point.lat, point.lng], {
+            radius: Math.min(15, 6 + Math.sqrt(items.length) * 1.8), color: '#fff', weight: 2,
+            fillColor: style.color, fillOpacity: .9,
+          });
+          marker.bindPopup(popupFor(point, items), {maxWidth: 380});
+          marker.bindTooltip(`${point.location}: ${items.length}`);
+          marker.addTo(layers[point.source_group] || map);
+          bounds.push([point.lat, point.lng]);
+          total += items.length;
         });
-        marker.bindPopup(popupFor(point), {maxWidth: 360});
-        marker.bindTooltip(`${point.location}: ${point.count}`);
-        marker.addTo(layers[point.source_group] || map);
-        bounds.push([point.lat, point.lng]);
+        controls.count.textContent = `${total} finding${total === 1 ? '' : 's'} shown`;
+        if (!fitted && bounds.length) { map.fitBounds(bounds, {padding: [30, 30], maxZoom: 8}); fitted = true; }
+      };
+
+      L.control.layers(null, {'City of Ottawa': layers.ottawa, 'MERX': layers.merx, 'CanadaBuys': layers.canadabuys}, {collapsed: false}).addTo(map);
+      [controls.search, controls.relevance, controls.enrichment, controls.source].forEach(control => {
+        control.addEventListener(control === controls.search ? 'input' : 'change', renderMarkers);
       });
-      L.control.layers(null, {
-        'City of Ottawa': layers.ottawa,
-        'MERX': layers.merx,
-        'CanadaBuys': layers.canadabuys,
-      }, {collapsed: false}).addTo(map);
-      if (bounds.length) map.fitBounds(bounds, {padding: [30, 30], maxZoom: 8});
+      document.getElementById('map-clear').addEventListener('click', () => {
+        controls.search.value = ''; controls.relevance.value = 'matched'; controls.enrichment.value = 'all'; controls.source.value = 'all'; renderMarkers();
+      });
+      renderMarkers();
     })();
   </script>
 </body>

@@ -67,6 +67,22 @@ def normalized(value):
     return re.sub(r"\s+", " ", "".join(char for char in text if not unicodedata.combining(char))).strip().lower()
 
 
+def location_query(metadata, source_name):
+    """Build the most precise safe Canadian geocoding query available."""
+    if normalized(source_name).startswith("city of ottawa"):
+        address = str(metadata.get("Addresses") or "").split(";")[0].strip()
+        if address:
+            return f"{address}, Ottawa, Ontario, Canada"
+        return ""
+    city = str(metadata.get("City") or "").strip()
+    province = str(metadata.get("Province") or "").strip()
+    if city and province:
+        return f"{city}, {province}, Canada"
+    if city:
+        return f"{city}, Canada"
+    return ""
+
+
 def coordinates_for(city, province, source_name):
     city_key = normalized(city)
     if normalized(source_name).startswith("city of ottawa"):
@@ -82,9 +98,10 @@ def coordinates_for(city, province, source_name):
     return None
 
 
-def build_map_points(rows):
-    """Group stored relevant findings by mapped location and source."""
+def build_map_points(rows, coordinate_cache=None):
+    """Group stored findings by mapped location and source."""
     groups = OrderedDict()
+    coordinate_cache = coordinate_cache or {}
     unknown = 0
     for row in rows:
         item = dict(row)
@@ -98,7 +115,16 @@ def build_map_points(rows):
         if normalized(source).startswith("city of ottawa"):
             city = city or "Ottawa"
             province = province or "Ontario"
-        resolved = coordinates_for(city, province, source)
+        query = location_query(metadata, source)
+        cached = coordinate_cache.get(normalized(query)) if query else None
+        if cached and cached.get("latitude") is not None and cached.get("longitude") is not None:
+            resolved = (
+                float(cached["latitude"]),
+                float(cached["longitude"]),
+                cached.get("precision") != "exact",
+            )
+        else:
+            resolved = coordinates_for(city, province, source)
         if not resolved:
             unknown += 1
             continue
@@ -122,16 +148,21 @@ def build_map_points(rows):
                 "location": location,
                 "approximate": approximate,
                 "count": 0,
+                "matched_count": 0,
                 "items": [],
             },
         )
         group["count"] += 1
-        if len(group["items"]) < 8:
+        group["matched_count"] += int(bool(item.get("relevant")))
+        if len(group["items"]) < 3000:
             group["items"].append(
                 {
                     "title": item.get("title") or "Untitled finding",
                     "url": item.get("url") or "",
                     "closing": metadata.get("Closing Date", ""),
+                    "source": source,
+                    "relevant": int(bool(item.get("relevant"))),
+                    "enrichment_status": item.get("enrichment_status") or "awaiting",
                 }
             )
     return {"points": list(groups.values()), "unknown": unknown}

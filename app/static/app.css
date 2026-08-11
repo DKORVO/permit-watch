@@ -172,3 +172,19 @@ code { background: #eaecf0; padding: .15rem .3rem; }
   .map-legend small { width: 100%; margin-left: 0; }
   #opportunity-map { min-height: 480px; height: 68vh; }
 }
+
+
+.map-controls { display: flex; align-items: end; gap: .7rem; flex-wrap: wrap; margin: .9rem 0; padding: .8rem; background: #fff; border: 1px solid #d8e3e8; border-radius: .65rem; }
+.map-controls label { display: grid; gap: .28rem; color: #475467; font-size: .72rem; font-weight: 800; }
+.map-controls input, .map-controls select { min-height: 2.45rem; padding: .48rem .6rem; border: 1px solid #b8cbd3; border-radius: .45rem; background: #fff; color: #101828; font: inherit; }
+.map-controls input:focus, .map-controls select:focus { outline: 3px solid rgba(14,116,144,.18); border-color: #0e7490; }
+.map-controls .map-search { flex: 1 1 260px; }
+.map-controls .map-search input { width: 100%; }
+.map-control-footer { display: flex; align-items: center; gap: .7rem; margin-left: auto; min-height: 2.45rem; }
+.map-control-footer strong { min-width: 7rem; color: #475467; font-size: .78rem; text-align: right; }
+@media (max-width: 640px) {
+  .map-controls { align-items: stretch; flex-direction: column; }
+  .map-controls label, .map-controls input, .map-controls select { width: 100%; }
+  .map-controls .map-search { flex-basis: auto; }
+  .map-control-footer { width: 100%; margin-left: 0; justify-content: space-between; }
+}
