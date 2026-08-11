@@ -6,7 +6,13 @@ from unittest.mock import Mock
 
 import requests
 
-from app.scraper import canadabuys_items, load_sources, merx_page_url, physical_security_score
+from app.scraper import (
+    canadabuys_items,
+    canadian_location_parts,
+    load_sources,
+    merx_page_url,
+    physical_security_score,
+)
 
 
 class PhysicalSecurityScoreTests(unittest.TestCase):
@@ -38,11 +44,41 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
         self.assertLess(score, 6)
         self.assertIn("security guard", exclusions)
 
+    def test_brand_substrings_and_work_verbs_do_not_create_a_match(self):
+        item = {
+            "title": "Facilities maintenance",
+            "excerpt": "Installation and maintenance services for children and accessibility.",
+        }
+        score, reasons, _ = physical_security_score(item, {})
+        self.assertLess(score, 6)
+        self.assertNotIn("hid", reasons)
+
+    def test_plural_security_camera_bid_matches(self):
+        item = {
+            "title": "Security cameras modernization",
+            "excerpt": "Supply and install new cameras at municipal buildings.",
+        }
+        score, reasons, _ = physical_security_score(item, {})
+        self.assertGreaterEqual(score, 6)
+        self.assertIn("security cameras", reasons)
+
     def test_merx_pagination_url(self):
         self.assertEqual(
             merx_page_url("https://www.merx.com/public/solicitations/open", 2),
             "https://www.merx.com/public/solicitations/open?pageNumber=2",
         )
+
+
+class CanadianLocationTests(unittest.TestCase):
+    def test_extracts_province_and_city(self):
+        self.assertEqual(
+            canadian_location_parts("Canada, Ontario, Ottawa"),
+            ("Ontario", "Ottawa"),
+        )
+
+    def test_province_only_leaves_city_empty(self):
+        self.assertEqual(canadian_location_parts("QC"), ("Quebec", ""))
+
 
 
 class SourceMigrationTests(unittest.TestCase):
@@ -93,9 +129,10 @@ class CanadaBuysOpenDataTests(unittest.TestCase):
             "tenderClosingDate-appelOffresDateCloture,tenderStatus-appelOffresStatut-eng,"
             "procurementCategory-categorieApprovisionnement,"
             "contractingEntityName-nomEntitContractante-eng,"
-            "tenderDescription-descriptionAppelOffres-eng,noticeURL\n"
+            "tenderDescription-descriptionAppelOffres-eng,regionsOfDelivery-regionLivraison-eng,noticeURL\n"
             "CCTV replacement,REF-7,SOL-7,2026-08-10,2026-09-10T14:00:00,"
             "Open,GD,Example department,Supply and install security cameras,"
+            "\"Canada, Ontario, Ottawa\","
             "https://canadabuys.canada.ca/en/tender-opportunities/tender-notice/example\n"
         )
         session = Mock()
@@ -112,6 +149,8 @@ class CanadaBuysOpenDataTests(unittest.TestCase):
         self.assertEqual(metadata["Category"], "Goods")
         self.assertEqual(metadata["Organization"], "Example department")
         self.assertEqual(metadata["Solicitation Number"], "SOL-7")
+        self.assertEqual(metadata["Province"], "Ontario")
+        self.assertEqual(metadata["City"], "Ottawa")
 
     def test_non_open_rows_are_ignored(self):
         csv_text = (

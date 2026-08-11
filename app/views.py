@@ -86,7 +86,8 @@ def render_source_page(section):
         filter_fields = [
             ("_Security Match", "Security relevance"),
             ("Solicitation Type", "Solicitation type"),
-            ("Location", "Location"),
+            ("Province", "Province"),
+            ("City", "City"),
         ]
         sort_options = [
             ("closing", "Closing soon"),
@@ -105,7 +106,8 @@ def render_source_page(section):
             ("Category", "Category"),
             ("Organization", "Organization"),
             ("Notice Type", "Notice type"),
-            ("Location", "Region of delivery"),
+            ("Province", "Province"),
+            ("City", "City"),
         ]
         sort_options = [
             ("closing", "Closing soon"),
