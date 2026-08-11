@@ -4,7 +4,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import env_int
 from .enrichment import enrich_item
-from .scraper import enrich_selected_items, retry_failed_enrichments, scrape_all
+from .scraper import (
+    enrich_selected_items,
+    rescore_stored_security_items,
+    retry_failed_enrichments,
+    scrape_all,
+)
 
 
 class ScrapeScheduler:
@@ -14,6 +19,16 @@ class ScrapeScheduler:
         self.scheduler = BackgroundScheduler(timezone=app.config["DISPLAY_TIMEZONE"])
 
     def start(self):
+        try:
+            result = rescore_stored_security_items(self.app.extensions["db"])
+            self.app.logger.info(
+                "Rescored %s stored security items; %s relevance values changed",
+                result["seen"], result["changed"],
+            )
+        except Exception:
+            # A matcher migration must not prevent the web app or scheduler
+            # from starting. The next restart can safely retry it.
+            self.app.logger.exception("Unable to rescore stored security items")
         minutes = env_int("SCRAPE_INTERVAL_MINUTES", 360, minimum=15)
         self.scheduler.add_job(self.run, "interval", minutes=minutes, id="scrape", max_instances=1, coalesce=True)
         self.scheduler.start()
