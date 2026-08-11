@@ -71,7 +71,7 @@
     </form>
 
     {% if latest_run %}
-    <aside class="{{ latest_run['status'] }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
+    <aside id="run-status" class="{{ latest_run['status'] }}" data-status="{{ latest_run['status'] }}" data-status-url="{{ url_for('views.run_status', section=section) }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
     {% endif %}
     <aside>Enrichment budget: {{ enrichment_budget['remaining'] }} remaining of {{ enrichment_budget['limit'] }} today.</aside>
 
@@ -108,6 +108,33 @@
       const metadataFilters = [...document.querySelectorAll('.metadata-filter')];
       const groups = [...document.querySelectorAll('.finding-group')];
       const cards = [...document.querySelectorAll('.finding-group article')];
+      const runStatus = document.querySelector('#run-status');
+      if (runStatus && ['queued', 'running'].includes(runStatus.dataset.status)) {
+        const pollStatus = async () => {
+          try {
+            const response = await fetch(runStatus.dataset.statusUrl, {
+              headers: {'Accept': 'application/json'},
+              cache: 'no-store',
+            });
+            if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
+            const payload = await response.json();
+            if (!payload.run) return;
+            const run = payload.run;
+            runStatus.className = run.status;
+            runStatus.dataset.status = run.status;
+            runStatus.textContent = `Last run: ${run.started_at} — ${run.status}${run.message ? `: ${run.message}` : ''}`;
+            if (['queued', 'running'].includes(run.status)) {
+              window.setTimeout(pollStatus, 1500);
+            } else {
+              // Reload once so new findings or enrichment summaries appear too.
+              window.setTimeout(() => window.location.reload(), 750);
+            }
+          } catch (_) {
+            window.setTimeout(pollStatus, 3000);
+          }
+        };
+        window.setTimeout(pollStatus, 500);
+      }
       const selections = [...document.querySelectorAll('.enrichment-select')];
       const enrichButton = document.querySelector('#enrich-selected');
       const enrichCount = enrichButton.querySelector('span');
