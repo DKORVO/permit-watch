@@ -24,7 +24,7 @@ class ScrapeScheduler:
         db = self.app.extensions["db"]
         if not self.lock.acquire(blocking=False):
             if run_id:
-                db.finish_run(activity_id, "error", "Another run is already in progress")
+                db.finish_run(run_id, "error", "Another run is already in progress")
             return False
         try:
             activity_id = run_id or db.begin_run(source_label or "All sources")
@@ -37,7 +37,7 @@ class ScrapeScheduler:
                 )
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
-                    run_id,
+                    activity_id,
                     "success",
                     f"{source_label + ': ' if source_label else ''}"
                     f"{result['new']} new from {result['seen']} items ({result['relevant']} relevant); "
@@ -67,7 +67,7 @@ class ScrapeScheduler:
                 )
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
-                    run_id,
+                    activity_id,
                     "success",
                     f"{source_label} selected enrichment: "
                     f"{result['enriched']} enriched, {result['failed']} failed, "
@@ -77,7 +77,7 @@ class ScrapeScheduler:
             except Exception as exc:
                 self.app.logger.exception("Selected enrichment failed")
                 db.finish_run(
-                    run_id,
+                    activity_id,
                     "error",
                     f"{source_label} selected enrichment: {str(exc)[:900]}",
                 )
@@ -97,7 +97,7 @@ class ScrapeScheduler:
                 result = retry_failed_enrichments(db, enrich_item, limit, daily_limit)
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
-                    run_id,
+                    activity_id,
                     "success",
                     f"Enrichment retry: {result['enriched']} enriched, {result['failed']} still failed, "
                     f"{result['awaiting']} awaiting ({result['retried']} attempted); "
