@@ -45,6 +45,11 @@ class Database:
               precision TEXT NOT NULL DEFAULT 'unknown',
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS notification_state (
+              name TEXT PRIMARY KEY,
+              cursor_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
             if "metadata" not in columns:
@@ -169,6 +174,48 @@ class Database:
                 """,
                 (query, latitude, longitude, precision),
             )
+
+    def notification_cursor(self, name):
+        """Return a durable digest cursor, initially limited to the past day."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT cursor_at FROM notification_state WHERE name = ?", (name,)
+            ).fetchone()
+            if row:
+                return row["cursor_at"]
+            return conn.execute("SELECT datetime('now', '-1 day')").fetchone()[0]
+
+    def set_notification_cursor(self, name):
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO notification_state(name, cursor_at)
+                VALUES (?, CURRENT_TIMESTAMP)
+                ON CONFLICT(name) DO UPDATE SET
+                  cursor_at=CURRENT_TIMESTAMP,
+                  updated_at=CURRENT_TIMESTAMP
+                """,
+                (name,),
+            )
+
+    def newly_matched_opportunities(self, since, limit=201):
+        """Return procurement matches collected after a successful digest."""
+        with self.connection() as conn:
+            return conn.execute(
+                """
+                SELECT id, source_name, title, url, published_text, metadata, created_at
+                FROM items
+                WHERE relevant = 1
+                  AND created_at > ?
+                  AND (
+                    LOWER(source_name) LIKE 'merx%'
+                    OR LOWER(source_name) LIKE 'canadabuys%'
+                  )
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (since, limit),
+            ).fetchall()
 
     def recent_items(self, limit=100):
         with self.connection() as conn:
