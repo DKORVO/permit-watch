@@ -216,6 +216,14 @@ class Database:
                 (message, source_scope),
             ).lastrowid
 
+    def keep_run_queued(self, run_id, message):
+        """Keep a requested action visible while it waits for the scheduler lock."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE runs SET status='queued', finished_at=NULL, message=? WHERE id=?",
+                (message, run_id),
+            )
+
     def start_run(self, run_id, message):
         with self.connection() as conn:
             conn.execute(
