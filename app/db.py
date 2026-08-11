@@ -188,6 +188,26 @@ class Database:
                 (summary, status, item_id),
             )
 
+    def queue_run(self, source_scope, message):
+        """Create a visible status row before a background action starts."""
+        with self.connection() as conn:
+            return conn.execute(
+                "INSERT INTO runs(status, message, source_scope) VALUES ('queued', ?, ?)",
+                (message, source_scope),
+            ).lastrowid
+
+    def start_run(self, run_id, message):
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE runs
+                SET started_at=CURRENT_TIMESTAMP, finished_at=NULL,
+                    status='running', message=?
+                WHERE id=?
+                """,
+                (message, run_id),
+            )
+
     def begin_run(self, source_scope="All sources"):
         with self.connection() as conn:
             return conn.execute(

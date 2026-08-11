@@ -177,17 +177,24 @@ def home():
 @bp.post("/run-now")
 def run_now():
     section, action = source_action()
+    db = current_app.extensions["db"]
+    run_id = db.queue_run(action["label"], f"{action['label']} run queued")
     scraper_scheduler = current_app.extensions["scraper_scheduler"]
-    scraper_scheduler.scheduler.add_job(
-        scraper_scheduler.run,
-        "date",
-        id=f"manual-scrape-{section}",
-        replace_existing=True,
-        kwargs={
-            "source_type": action["source_type"],
-            "source_label": action["label"],
-        },
-    )
+    try:
+        scraper_scheduler.scheduler.add_job(
+            scraper_scheduler.run,
+            "date",
+            id=f"manual-scrape-{section}",
+            replace_existing=True,
+            kwargs={
+                "source_type": action["source_type"],
+                "source_label": action["label"],
+                "run_id": run_id,
+            },
+        )
+    except Exception as exc:
+        db.finish_run(run_id, "error", f"Unable to queue run: {str(exc)[:900]}")
+        raise
     return redirect(url_for(action["endpoint"]))
 
 
@@ -203,19 +210,50 @@ def enrich_selected():
     if len(item_ids) > 100:
         abort(400, "Select no more than 100 findings at a time")
 
-    scraper_scheduler = current_app.extensions["scraper_scheduler"]
-    scraper_scheduler.scheduler.add_job(
-        scraper_scheduler.enrich_selected,
-        "date",
-        id=f"enrich-selected-{section}",
-        replace_existing=True,
-        kwargs={
-            "item_ids": item_ids,
-            "source_prefix": action["source_prefix"],
-            "source_label": action["label"],
-        },
+    db = current_app.extensions["db"]
+    run_id = db.queue_run(
+        action["label"], f"{action['label']} selected enrichment queued"
     )
+    scraper_scheduler = current_app.extensions["scraper_scheduler"]
+    try:
+        scraper_scheduler.scheduler.add_job(
+            scraper_scheduler.enrich_selected,
+            "date",
+            id=f"enrich-selected-{section}",
+            replace_existing=True,
+            kwargs={
+                "item_ids": item_ids,
+                "source_prefix": action["source_prefix"],
+                "source_label": action["label"],
+                "run_id": run_id,
+            },
+        )
+    except Exception as exc:
+        db.finish_run(
+            run_id, "error", f"Unable to queue selected enrichment: {str(exc)[:850]}"
+        )
+        raise
     return redirect(url_for(action["endpoint"]))
+
+@bp.get("/run-status/<section>")
+def run_status(section):
+    action = SOURCE_ACTIONS.get(section)
+    if not action:
+        abort(404)
+    row = current_app.extensions["db"].latest_run(action["label"])
+    if not row:
+        return jsonify(run=None)
+    localtime = current_app.jinja_env.filters["localtime"]
+    return jsonify(
+        run={
+            "id": row["id"],
+            "status": row["status"],
+            "message": row["message"] or "",
+            "started_at": localtime(row["started_at"]),
+            "finished_at": localtime(row["finished_at"]),
+        }
+    )
+
 
 @bp.get("/healthz")
 def healthz():
