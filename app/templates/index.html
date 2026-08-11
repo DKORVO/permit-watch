@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Watcher</title>
+  <title>{% if section != 'home' %}{{ page_title }} · {% endif %}Watcher</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='watcher-logo.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
   <main>
     <header>
       <div class="brand">
+        <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo.png') }}" alt="">
         <div>
           <h1>Watcher</h1>
           <p>Public-notice monitor · verify findings at the source</p>
@@ -58,7 +60,7 @@
     <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
     <form class="finding-controls" onsubmit="return false;" aria-label="{{ page_title }} findings controls">
-      <label>Search <input id="finding-search" type="search" placeholder="{{ search_placeholder }}"></label>
+      <label class="search-control">Search <input id="finding-search" type="search" placeholder="{{ search_placeholder }}"></label>
       <label>Enrichment <select id="status-filter"><option value="all">All statuses</option><option value="awaiting">Awaiting</option><option value="enriched">Enriched</option><option value="failed">Failed</option></select></label>
       {% for filter in filters %}
       <label>{{ filter['label'] }}
@@ -69,6 +71,7 @@
       </label>
       {% endfor %}
       <label>Sort <select id="finding-sort">{% for value, label in sort_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+      <div class="control-footer"><strong id="result-count">{{ total_items }} findings</strong><button id="clear-filters" class="text-button" type="button">Clear filters</button></div>
     </form>
 
     {% if latest_run %}
@@ -84,8 +87,15 @@
         {% for item in groups[status] %}
         <article data-status="{{ status }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-metadata="{{ item['metadata']|tojson|forceescape }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-publication="{{ item['metadata'].get('Publication', item['published_text']) }}" data-received="{{ item['metadata'].get('Date Received', item['published_text']) }}" data-address="{{ item['metadata'].get('Addresses', '')|lower }}" data-title="{{ item['title']|lower }}" data-relevant="{{ item['relevant'] }}">
           <label class="finding-select"><input class="enrichment-select" type="checkbox" name="item_id" value="{{ item['id'] }}" form="enrichment-form"> Select for enrichment</label>
-          <div class="meta"><span>{{ item['source_name'] }}</span>{% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}{% if item['relevant'] %}<b>Relevant</b>{% endif %}</div>
+          <div class="meta">
+            <span>{{ item['source_name'] }}</span>
+            {% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}
+            {% if section in ['merx', 'canadabuys'] %}
+              <b class="relevance-badge {{ 'matched' if item['relevant'] else 'other' }}">{{ 'Matched' if item['relevant'] else 'Other' }}</b>
+            {% elif item['relevant'] %}<b class="relevance-badge matched">Relevant</b>{% endif %}
+          </div>
           <h3><a href="{{ item['url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a></h3>
+          {% if item['metadata'].get('_Match Reasons') %}<p class="match-reasons"><strong>Matched on</strong> {{ item['metadata']['_Match Reasons'] }}</p>{% endif %}
           <dl class="fields">{% for label, value in item['metadata'].items() if value and not label.startswith('_') %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
           {% if item['enrichment'] %}<p class="summary">{{ item['enrichment'] }}</p>{% endif %}
           <details><summary>Source excerpt</summary><p>{{ item['excerpt'] }}</p></details>
@@ -107,6 +117,8 @@
       const search = document.querySelector('#finding-search');
       const status = document.querySelector('#status-filter');
       const sort = document.querySelector('#finding-sort');
+      const resultCount = document.querySelector('#result-count');
+      const clearFilters = document.querySelector('#clear-filters');
       const metadataFilters = [...document.querySelectorAll('.metadata-filter')];
       const groups = [...document.querySelectorAll('.finding-group')];
       const cards = [...document.querySelectorAll('.finding-group article')];
@@ -153,6 +165,7 @@
       });
       const update = () => {
         const term = search.value.trim().toLowerCase();
+        let totalShown = 0;
         groups.forEach(group => {
           const articles = [...group.querySelectorAll('article')];
           articles.forEach(card => {
@@ -176,11 +189,23 @@
           });
           ordered.forEach(card => group.appendChild(card));
           const shownCount = articles.filter(card => !card.hidden).length;
+          totalShown += shownCount;
           group.hidden = shownCount === 0;
           const count = group.querySelector('h2 span');
           if (count) count.textContent = shownCount;
         });
+        resultCount.textContent = `${totalShown} of ${cards.length} findings`;
       };
+      clearFilters.addEventListener('click', () => {
+        search.value = '';
+        status.value = 'all';
+        metadataFilters.forEach(filter => {
+          filter.value = filter.dataset.field === '_Security Match' ? 'matched' : 'all';
+        });
+        sort.selectedIndex = 0;
+        update();
+        search.focus();
+      });
       [search, status, sort, ...metadataFilters].forEach(control => {
         control.addEventListener('input', update);
         control.addEventListener('change', update);
