@@ -1,10 +1,12 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 import requests
 
-from app.scraper import canadabuys_items, merx_page_url, physical_security_score
+from app.scraper import canadabuys_items, load_sources, merx_page_url, physical_security_score
 
 
 class PhysicalSecurityScoreTests(unittest.TestCase):
@@ -41,6 +43,34 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
             merx_page_url("https://www.merx.com/public/solicitations/open", 2),
             "https://www.merx.com/public/solicitations/open?pageNumber=2",
         )
+
+
+class SourceMigrationTests(unittest.TestCase):
+    def test_existing_canadabuys_source_uses_open_data_feed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            (data_dir / "sources.json").write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "name": "CanadaBuys — tender opportunities",
+                                "type": "canadabuys",
+                                "url": "https://canadabuys.canada.ca/en/tender-opportunities?page=1",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            source = load_sources(data_dir)[0]
+
+        self.assertEqual(
+            source["url"],
+            "https://canadabuys.canada.ca/opendata/pub/openTenderNotice-ouvertAvisAppelOffres.csv",
+        )
+        self.assertIn("/en/tender-opportunities?", source["landing_url"])
 
 
 class CanadaBuysOpenDataTests(unittest.TestCase):
