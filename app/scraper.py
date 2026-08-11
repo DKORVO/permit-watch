@@ -72,6 +72,22 @@ SECURITY_EXCLUSIONS = (
     "event security", "financial security", "scada", "fire alarm only",
 )
 
+CANADIAN_PROVINCES = {
+    "alberta": "Alberta", "ab": "Alberta",
+    "british columbia": "British Columbia", "bc": "British Columbia",
+    "manitoba": "Manitoba", "mb": "Manitoba",
+    "new brunswick": "New Brunswick", "nb": "New Brunswick",
+    "newfoundland and labrador": "Newfoundland and Labrador", "nl": "Newfoundland and Labrador",
+    "nova scotia": "Nova Scotia", "ns": "Nova Scotia",
+    "ontario": "Ontario", "on": "Ontario",
+    "prince edward island": "Prince Edward Island", "pei": "Prince Edward Island", "pe": "Prince Edward Island",
+    "quebec": "Quebec", "québec": "Quebec", "qc": "Quebec", "pq": "Quebec",
+    "saskatchewan": "Saskatchewan", "sk": "Saskatchewan",
+    "northwest territories": "Northwest Territories", "nt": "Northwest Territories",
+    "nunavut": "Nunavut", "nu": "Nunavut",
+    "yukon": "Yukon", "yt": "Yukon",
+}
+
 
 def load_sources(data_dir: Path):
     with (data_dir / "sources.json").open(encoding="utf-8") as handle:
@@ -136,27 +152,79 @@ def html_items(source, session):
         yield {"title": title, "url": url, "published_text": select_text(node, source.get("date_selector")), "excerpt": clean(node.get_text(" ", strip=True))[:4000]}
 
 
+def phrase_matches(text, terms):
+    """Return whole-word/whole-phrase matches, avoiding substrings like hid/axis."""
+    lowered = (text or "").lower()
+    matches = []
+    for term in terms:
+        pattern = re.escape(term.lower()).replace(r"\ ", r"[\s/-]+")
+        if re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", lowered):
+            matches.append(term)
+    return sorted(set(matches))
+
+
 def physical_security_score(item, metadata):
-    """Score a MERX opportunity for physical-security integration work."""
+    """Score an opportunity for physical-security integration work."""
+    title = item.get("title", "")
     text = " ".join(
-        [item.get("title", ""), item.get("excerpt", ""), *[str(value) for value in metadata.values()]]
-    ).lower()
-    technology = sorted({term for term in PHYSICAL_SECURITY_TERMS if term in text})
-    work = sorted({term for term in SECURITY_WORK_TERMS if term in text})
-    brands = sorted({term for term in SECURITY_BRANDS if term in text})
-    exclusions = sorted({term for term in SECURITY_EXCLUSIONS if term in text})
+        [title, item.get("excerpt", ""), *[str(value) for value in metadata.values()]]
+    )
+    technology = phrase_matches(text, PHYSICAL_SECURITY_TERMS)
+    work = phrase_matches(text, SECURITY_WORK_TERMS)
+    brands = phrase_matches(text, SECURITY_BRANDS)
+    exclusions = phrase_matches(text, SECURITY_EXCLUSIONS)
+    title_technology = phrase_matches(title, PHYSICAL_SECURITY_TERMS)
+    title_work = phrase_matches(title, SECURITY_WORK_TERMS)
     score = (
-        4 * min(len(technology), 2)
+        5 * min(len(technology), 2)
         + 3 * min(len(work), 2)
         + 2 * min(len(brands), 2)
-        - 5 * min(len(exclusions), 2)
+        + 2 * min(len(title_technology), 1)
+        + min(len(title_work), 1)
+        - 6 * min(len(exclusions), 2)
     )
-    # "Access control" is common in software bids. Require another physical
-    # technology term when software/security exclusions are also present.
+    # A brand or generic work verb alone is not enough: every match must name
+    # an actual physical-security technology. This removes common procurement
+    # false positives while retaining clear installation/maintenance bids.
+    if not technology:
+        score = min(score, 0)
+    # "Access control" is also common in software authorization. Reject it
+    # when that is the only technology signal and an IT-security exclusion is present.
     if technology == ["access control"] and exclusions:
         score = min(score, 0)
     reasons = technology + work + brands
     return score, reasons, exclusions
+
+
+def canadian_location_parts(value):
+    """Extract normalized province and city labels from a Canadian location string."""
+    raw_parts = [clean(part) for part in re.split(r"[,;/|]+", value or "") if clean(part)]
+    province = ""
+    province_indexes = set()
+    for index, part in enumerate(raw_parts):
+        normalized = re.sub(r"[^a-zà-ÿ ]", "", part.lower()).strip()
+        if normalized in CANADIAN_PROVINCES:
+            province = CANADIAN_PROVINCES[normalized]
+            province_indexes.add(index)
+            break
+        for alias, label in CANADIAN_PROVINCES.items():
+            if len(alias) > 2 and re.search(
+                rf"(?<![a-z]){re.escape(alias)}(?![a-z])", normalized
+            ):
+                province = label
+                province_indexes.add(index)
+                break
+        if province:
+            break
+    ignored = {"canada", "national capital region", "multiple locations", "various locations"}
+    city_candidates = [
+        part for index, part in enumerate(raw_parts)
+        if index not in province_indexes
+        and part.lower() not in ignored
+        and re.sub(r"[^a-zà-ÿ ]", "", part.lower()).strip() not in CANADIAN_PROVINCES
+    ]
+    city = city_candidates[-1] if city_candidates else ""
+    return province, city
 
 
 def merx_detail_fields(session, url):
@@ -241,6 +309,9 @@ def merx_items(source, session):
                 detail_lookups += 1
                 time.sleep(detail_interval)
             item["title"] = fields.pop("Title", item["title"])
+            province, city = canadian_location_parts(fields.get("Location", ""))
+            fields["Province"] = province
+            fields["City"] = city
             yield {**item, "metadata": json.dumps({label: value for label, value in fields.items() if value})}
 
         if not nodes or not page_had_new_items:
@@ -303,6 +374,11 @@ def canadabuys_items(source, session):
         organization = canadabuys_csv_value(
             row, "contractingEntityName", "endUserEntityName"
         )
+        location = canadabuys_csv_value(
+            row, "deliveryLocations", "deliveryLocation",
+            "regionsOfDelivery", "regionsOfOpportunity"
+        )
+        province, city = canadian_location_parts(location)
         fields = {
             "Category": categories.get(category_code, category_code),
             "Publication": publication,
@@ -310,9 +386,9 @@ def canadabuys_items(source, session):
             "Organization": organization,
             "Status": status,
             "Notice Type": canadabuys_csv_value(row, "noticeType"),
-            "Location": canadabuys_csv_value(
-                row, "regionsOfDelivery", "regionsOfOpportunity"
-            ),
+            "Location": location,
+            "Province": province,
+            "City": city,
             "Solicitation Number": solicitation,
             "Reference Number": reference,
             "UNSPSC": canadabuys_csv_value(row, "unspsc"),
