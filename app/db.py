@@ -89,7 +89,7 @@ class Database:
         with self.connection() as conn:
             return conn.execute(
                 """
-                SELECT id, source_name, title, excerpt, metadata
+                SELECT id, source_name, title, excerpt, relevant, metadata
                 FROM items
                 WHERE LOWER(source_name) LIKE 'merx%'
                    OR LOWER(source_name) LIKE 'canadabuys%'
