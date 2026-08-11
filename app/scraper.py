@@ -198,6 +198,35 @@ def physical_security_score(item, metadata):
     return score, reasons, exclusions
 
 
+def rescore_stored_security_items(db, minimum_score=6):
+    """Apply the current matcher to historical MERX and CanadaBuys rows."""
+    counts = {"seen": 0, "relevant": 0, "changed": 0}
+    for row in db.stored_security_items():
+        item = dict(row)
+        try:
+            metadata = json.loads(item.get("metadata") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        # Do not feed results from an older matcher back into the new score.
+        public_metadata = {
+            label: value for label, value in metadata.items()
+            if not str(label).startswith("_")
+        }
+        score, reasons, exclusions = physical_security_score(item, public_metadata)
+        relevant_value = int(score >= int(minimum_score))
+        metadata.update(public_metadata)
+        metadata["_Security Match"] = "matched" if relevant_value else "other"
+        metadata["_Match Score"] = score
+        metadata["_Match Reasons"] = ", ".join(reasons)
+        metadata["_Exclusions"] = ", ".join(exclusions)
+        old_relevant = int(item.get("relevant") or 0)
+        db.update_item_relevance(item["id"], relevant_value, json.dumps(metadata))
+        counts["seen"] += 1
+        counts["relevant"] += relevant_value
+        counts["changed"] += int(old_relevant != relevant_value)
+    return counts
+
+
 def canadian_location_parts(value):
     """Extract normalized province and city labels from a Canadian location string."""
     raw_parts = [clean(part) for part in re.split(r"[,;/|]+", value or "") if clean(part)]

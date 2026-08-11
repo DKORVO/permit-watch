@@ -12,6 +12,7 @@ from app.scraper import (
     load_sources,
     merx_page_url,
     physical_security_score,
+    rescore_stored_security_items,
 )
 
 
@@ -67,6 +68,42 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
             merx_page_url("https://www.merx.com/public/solicitations/open", 2),
             "https://www.merx.com/public/solicitations/open?pageNumber=2",
         )
+
+
+class StoredSecurityRescoreTests(unittest.TestCase):
+    def test_historical_rows_are_rescored_without_old_match_feedback(self):
+        db = Mock()
+        db.stored_security_items.return_value = [
+            {
+                "id": 1,
+                "source_name": "MERX — Ottawa opportunities",
+                "title": "Programmed Culvert Replacement Package",
+                "excerpt": "",
+                "relevant": 1,
+                "metadata": json.dumps({
+                    "_Security Match": "matched",
+                    "_Match Reasons": "replacement, integration",
+                }),
+            },
+            {
+                "id": 2,
+                "source_name": "MERX — Ottawa opportunities",
+                "title": "CCTV asset inspection and decision support",
+                "excerpt": "",
+                "relevant": 1,
+                "metadata": None,
+            },
+        ]
+
+        result = rescore_stored_security_items(db)
+
+        self.assertEqual(result, {"seen": 2, "relevant": 1, "changed": 1})
+        first_update = db.update_item_relevance.call_args_list[0].args
+        second_update = db.update_item_relevance.call_args_list[1].args
+        self.assertEqual(first_update[0:2], (1, 0))
+        self.assertEqual(second_update[0:2], (2, 1))
+        self.assertEqual(json.loads(first_update[2])["_Security Match"], "other")
+        self.assertEqual(json.loads(second_update[2])["_Security Match"], "matched")
 
 
 class CanadianLocationTests(unittest.TestCase):
