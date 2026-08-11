@@ -126,6 +126,20 @@ class Database:
                 addresses[row["url"]] = value
         return addresses
 
+    def map_items(self, limit=3000):
+        """Return recent relevant findings used by the dashboard map."""
+        with self.connection() as conn:
+            return conn.execute(
+                """
+                SELECT id, source_name, title, url, metadata
+                FROM items
+                WHERE relevant = 1
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
     def recent_items(self, limit=100):
         with self.connection() as conn:
             return conn.execute("SELECT * FROM items ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
