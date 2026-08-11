@@ -15,13 +15,16 @@
         <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo.png') }}" alt="">
         <div><h1>Watcher</h1><p>Public-notice monitor · verify findings at the source</p></div>
       </div>
-      <nav class="actions" aria-label="Map navigation">
-        <a class="button-link secondary" href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
-        <a class="button-link secondary" href="{{ url_for('views.merx') }}">MERX</a>
-        <a class="button-link secondary" href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
+      <div class="actions">
         <a class="button-link secondary" href="{{ url_for('views.home') }}">Dashboard</a>
-      </nav>
+      </div>
     </header>
+
+    <nav class="source-tabs" aria-label="Finding source">
+      <a href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
+      <a href="{{ url_for('views.merx') }}">MERX</a>
+      <a href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
+    </nav>
 
     <section class="map-page">
       <div class="page-heading map-page-heading">
