@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opportunity map · Watcher</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='watcher-logo.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">
+        <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo.png') }}" alt="">
+        <div><h1>Watcher</h1><p>Public-notice monitor · verify findings at the source</p></div>
+      </div>
+      <div class="actions">
+        <a class="button-link secondary" href="{{ url_for('views.home') }}">Back to dashboard</a>
+      </div>
+    </header>
+
+    <section class="map-page">
+      <div class="page-heading map-page-heading">
+        <div><h2>Opportunity map</h2><p>Mapped, matched opportunities from every monitored source.</p></div>
+        <div class="map-stat"><strong>{{ map_data['points']|sum(attribute='count') }}</strong> mapped · <strong>{{ map_data['unknown'] }}</strong> unknown</div>
+      </div>
+      <div class="map-legend" aria-label="Map legend">
+        <span><i class="ottawa"></i>City of Ottawa</span>
+        <span><i class="merx"></i>MERX</span>
+        <span><i class="canadabuys"></i>CanadaBuys</span>
+        <small>Province-only locations are approximate.</small>
+      </div>
+      <div id="opportunity-map" aria-label="Interactive map of matched opportunities"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    (() => {
+      const data = {{ map_data|tojson }};
+      const styles = {
+        ottawa: {label: 'City of Ottawa', color: '#175cd3'},
+        merx: {label: 'MERX', color: '#0e7490'},
+        canadabuys: {label: 'CanadaBuys', color: '#7c3aed'},
+      };
+      const map = L.map('opportunity-map').setView([56.2, -96.5], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map);
+
+      const layers = {};
+      Object.entries(styles).forEach(([key, style]) => {
+        layers[key] = L.layerGroup().addTo(map);
+      });
+      const bounds = [];
+
+      const popupFor = point => {
+        const root = document.createElement('div');
+        root.className = 'map-popup';
+        const heading = document.createElement('strong');
+        heading.textContent = `${point.location} · ${point.count} finding${point.count === 1 ? '' : 's'}`;
+        root.appendChild(heading);
+        const source = document.createElement('small');
+        source.textContent = styles[point.source_group]?.label || point.source;
+        root.appendChild(source);
+        const list = document.createElement('ul');
+        point.items.forEach(item => {
+          const row = document.createElement('li');
+          const link = document.createElement('a');
+          link.href = item.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = item.title;
+          row.appendChild(link);
+          if (item.closing) {
+            const closing = document.createElement('span');
+            closing.textContent = `Closes ${item.closing}`;
+            row.appendChild(closing);
+          }
+          list.appendChild(row);
+        });
+        root.appendChild(list);
+        if (point.count > point.items.length) {
+          const more = document.createElement('em');
+          more.textContent = `+${point.count - point.items.length} more at this location`;
+          root.appendChild(more);
+        }
+        if (point.approximate) {
+          const note = document.createElement('em');
+          note.textContent = 'Approximate province-level location';
+          root.appendChild(note);
+        }
+        return root;
+      };
+
+      data.points.forEach(point => {
+        const style = styles[point.source_group] || {color: '#475467'};
+        const marker = L.circleMarker([point.lat, point.lng], {
+          radius: Math.min(15, 6 + Math.sqrt(point.count) * 1.8),
+          color: '#fff', weight: 2,
+          fillColor: style.color, fillOpacity: .9,
+        });
+        marker.bindPopup(popupFor(point), {maxWidth: 360});
+        marker.bindTooltip(`${point.location}: ${point.count}`);
+        marker.addTo(layers[point.source_group] || map);
+        bounds.push([point.lat, point.lng]);
+      });
+      L.control.layers(null, {
+        'City of Ottawa': layers.ottawa,
+        'MERX': layers.merx,
+        'CanadaBuys': layers.canadabuys,
+      }, {collapsed: false}).addTo(map);
+      if (bounds.length) map.fitBounds(bounds, {padding: [30, 30], maxZoom: 8});
+    })();
+  </script>
+</body>
+</html>

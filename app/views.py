@@ -2,6 +2,7 @@ import json
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
 
 from .config import env_int
+from .map_data import build_map_points
 
 bp = Blueprint("views", __name__)
 
@@ -154,11 +155,13 @@ def canadabuys():
 def home():
     db = current_app.extensions["db"]
     daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
+    map_data = build_map_points(db.map_items())
     return render_template(
         "index.html", section="home",
         groups={"awaiting": [], "enriched": [], "failed": []}, total_items=0,
         latest_run=db.latest_run(),
         enrichment_budget=db.enrichment_budget(daily_limit),
+        map_data=map_data,
         home_summaries=[
             {
                 "name": "City of Ottawa", "description": "Development applications",
@@ -176,6 +179,18 @@ def home():
                 "show_matches": True,
             },
         ],
+    )
+
+
+@bp.get("/map")
+def opportunity_map():
+    db = current_app.extensions["db"]
+    map_data = build_map_points(db.map_items())
+    return render_template(
+        "map.html",
+        section="map",
+        page_title="Opportunity map",
+        map_data=map_data,
     )
 
 
