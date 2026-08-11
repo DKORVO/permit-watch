@@ -25,7 +25,7 @@ class ScrapeScheduler:
             return False
         try:
             db = self.app.extensions["db"]
-            run_id = db.begin_run()
+            run_id = db.begin_run(source_label or "All sources")
             try:
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = scrape_all(
@@ -51,7 +51,7 @@ class ScrapeScheduler:
             return False
         try:
             db = self.app.extensions["db"]
-            run_id = db.begin_run()
+            run_id = db.begin_run(source_label)
             try:
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = enrich_selected_items(
@@ -82,7 +82,7 @@ class ScrapeScheduler:
             return False
         try:
             db = self.app.extensions["db"]
-            run_id = db.begin_run()
+            run_id = db.begin_run("All sources")
             try:
                 limit = env_int("ENRICHMENT_RETRY_LIMIT", 10)
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
