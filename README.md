@@ -45,9 +45,9 @@ For Ottawa's JavaScript-based Development Applications Search, add the `ottawa_d
 }
 ```
 
-The built-in MERX connector reviews Canada-wide open opportunities and scores them for physical-security integration work such as access control, CCTV, intrusion detection, installation, commissioning, and maintenance. The CanadaBuys connector applies the same scoring to the supplied federal open/awarded tender search. Matching bids are enriched and shown by default; each procurement tab can also display all of its collected bids.
+The built-in MERX connector reviews Canada-wide open opportunities and scores them for physical-security integration work such as access control, CCTV, intrusion detection, installation, commissioning, and maintenance. The CanadaBuys connector downloads the official federal Open tender notices CSV, retains each notice hyperlink, and applies the same scoring without scraping or paginating the website. Matching bids are shown by default; each procurement tab can also display all of its collected bids.
 
-The “Run now” action reloads this file and starts a non-overlapping run. It does not alter source settings through the UI.
+The tab-specific Run action reloads this file and starts a non-overlapping run for the active source. It does not alter source settings through the UI.
 
 ### Ottawa active site plans and condominiums
 
