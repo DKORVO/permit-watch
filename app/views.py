@@ -163,14 +163,17 @@ def home():
             {
                 "name": "City of Ottawa", "description": "Development applications",
                 "endpoint": "views.ottawa", "summary": db.source_summary("City of Ottawa"),
+                "show_matches": False,
             },
             {
                 "name": "MERX", "description": "Canada-wide physical-security integration opportunities",
                 "endpoint": "views.merx", "summary": db.source_summary("MERX"),
+                "show_matches": True,
             },
             {
                 "name": "CanadaBuys", "description": "Federal physical-security tender opportunities",
                 "endpoint": "views.canadabuys", "summary": db.source_summary("CanadaBuys"),
+                "show_matches": True,
             },
         ],
     )
