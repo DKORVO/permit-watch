@@ -1,9 +1,10 @@
+import json
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import requests
 
-from app.scraper import canadabuys_items, canadabuys_page_url, merx_page_url, physical_security_score
+from app.scraper import canadabuys_items, merx_page_url, physical_security_score
 
 
 class PhysicalSecurityScoreTests(unittest.TestCase):
@@ -35,15 +36,6 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
         self.assertLess(score, 6)
         self.assertIn("security guard", exclusions)
 
-    def test_canadabuys_pagination_url(self):
-        self.assertEqual(
-            canadabuys_page_url(
-                "https://canadabuys.canada.ca/en/tender-opportunities?status=open",
-                2,
-            ),
-            "https://canadabuys.canada.ca/en/tender-opportunities?status=open&page=1",
-        )
-
     def test_merx_pagination_url(self):
         self.assertEqual(
             merx_page_url("https://www.merx.com/public/solicitations/open", 2),
@@ -51,44 +43,74 @@ class PhysicalSecurityScoreTests(unittest.TestCase):
         )
 
 
-class CanadaBuysPaginationTests(unittest.TestCase):
+class CanadaBuysOpenDataTests(unittest.TestCase):
     def setUp(self):
         self.source = {
             "name": "CanadaBuys",
-            "url": "https://canadabuys.canada.ca/en/tender-opportunities?status=open",
-            "page_limit": 2,
-            "page_request_interval_seconds": 0,
-            "detail_lookup_limit": 0,
+            "url": "https://canadabuys.canada.ca/opendata/pub/open.csv",
+            "landing_url": "https://canadabuys.canada.ca/en/tender-opportunities?status=open",
         }
-        self.first_page = Mock(
-            text="""
-                <table><tbody><tr>
-                  <td><a href="/en/tender-opportunities/tender-notice/example">Camera replacement</a></td>
-                  <td>Security equipment</td><td>2026/08/10</td>
-                  <td>2026/09/10</td><td>Example department</td>
-                </tr></tbody></table>
-            """
-        )
-        self.first_page.raise_for_status.return_value = None
 
-    @patch("app.scraper.time.sleep")
-    def test_later_page_failure_keeps_first_page_results(self, _sleep):
-        forbidden = Mock()
-        forbidden.raise_for_status.side_effect = requests.HTTPError("403 Forbidden")
+    def response(self, content):
+        response = Mock(content=content.encode("utf-8"))
+        response.raise_for_status.return_value = None
+        return response
+
+    def test_csv_notice_keeps_hyperlink_and_metadata(self):
+        csv_text = (
+            "title-titre-eng,referenceNumber-numeroReference,"
+            "solicitationNumber-numeroSollicitation,publicationDate-datePublication,"
+            "tenderClosingDate-appelOffresDateCloture,tenderStatus-appelOffresStatut-eng,"
+            "procurementCategory-categorieApprovisionnement,"
+            "contractingEntityName-nomEntitContractante-eng,"
+            "tenderDescription-descriptionAppelOffres-eng,noticeURL\n"
+            "CCTV replacement,REF-7,SOL-7,2026-08-10,2026-09-10T14:00:00,"
+            "Open,GD,Example department,Supply and install security cameras,"
+            "https://canadabuys.canada.ca/en/tender-opportunities/tender-notice/example\n"
+        )
         session = Mock()
-        session.get.side_effect = [self.first_page, forbidden]
+        session.get.return_value = self.response(csv_text)
 
         items = list(canadabuys_items(self.source, session))
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "Camera replacement")
-        self.assertEqual(session.get.call_count, 2)
+        self.assertEqual(
+            items[0]["url"],
+            "https://canadabuys.canada.ca/en/tender-opportunities/tender-notice/example",
+        )
+        metadata = json.loads(items[0]["metadata"])
+        self.assertEqual(metadata["Category"], "Goods")
+        self.assertEqual(metadata["Organization"], "Example department")
+        self.assertEqual(metadata["Solicitation Number"], "SOL-7")
 
-    def test_first_page_failure_is_reported(self):
-        forbidden = Mock()
-        forbidden.raise_for_status.side_effect = requests.HTTPError("403 Forbidden")
+    def test_non_open_rows_are_ignored(self):
+        csv_text = (
+            "title-titre-eng,tenderStatus-appelOffresStatut-eng,noticeURL\n"
+            "Expired opportunity,Expired,https://example.test/expired\n"
+        )
         session = Mock()
-        session.get.return_value = forbidden
+        session.get.return_value = self.response(csv_text)
+
+        self.assertEqual(list(canadabuys_items(self.source, session)), [])
+
+    def test_missing_notice_url_gets_unique_landing_link(self):
+        csv_text = (
+            "title-titre-eng,referenceNumber-numeroReference,"
+            "tenderStatus-appelOffresStatut-eng\n"
+            "Access control,REF 12,Open\n"
+        )
+        session = Mock()
+        session.get.return_value = self.response(csv_text)
+
+        item = list(canadabuys_items(self.source, session))[0]
+
+        self.assertTrue(item["url"].endswith("#notice-REF%2012"))
+
+    def test_download_failure_is_reported(self):
+        response = Mock()
+        response.raise_for_status.side_effect = requests.HTTPError("403 Forbidden")
+        session = Mock()
+        session.get.return_value = response
 
         with self.assertRaises(requests.HTTPError):
             list(canadabuys_items(self.source, session))
