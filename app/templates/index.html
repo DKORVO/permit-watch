@@ -20,7 +20,7 @@
         <a class="button-link secondary icon-button" href="{{ url_for('views.home') }}" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></a>
         <form method="post" action="{{ url_for('views.run_now') }}">
           <input type="hidden" name="section" value="{{ section }}">
-          <button>Run {{ page_title }}</button>
+          <button{% if latest_run and latest_run['status'] in ['queued', 'running'] %} disabled{% endif %}>Run {{ page_title }}</button>
         </form>
         <form id="enrichment-form" method="post" action="{{ url_for('views.enrich_selected') }}">
           <input type="hidden" name="section" value="{{ section }}">
@@ -42,6 +42,7 @@
         <a class="source-card" href="{{ url_for(source['endpoint']) }}">
           <strong>{{ source['name'] }}</strong><span>{{ source['description'] }}</span>
           <span class="source-total">{{ source['summary']['total'] }} findings</span>
+          {% if source['show_matches'] %}<span class="source-matched">{{ source['summary']['matched'] }} matched results</span>{% endif %}
           <span class="status-counts"><b>{{ source['summary']['enriched'] }} enriched</b><b>{{ source['summary']['awaiting'] }} awaiting</b><b>{{ source['summary']['failed'] }} failed</b></span>
           {% if source['summary']['latest_collected'] %}<small>Latest finding: {{ source['summary']['latest_collected']|localtime }}</small>{% endif %}
         </a>
@@ -71,7 +72,8 @@
     </form>
 
     {% if latest_run %}
-    <aside id="run-status" class="{{ latest_run['status'] }}" data-status="{{ latest_run['status'] }}" data-status-url="{{ url_for('views.run_status', section=section) }}">Last run: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
+    {% set run_active = latest_run['status'] in ['queued', 'running'] %}
+    <aside id="run-status" class="{{ latest_run['status'] }}" data-status="{{ latest_run['status'] }}" data-status-url="{{ url_for('views.run_status', section=section) }}">{{ 'Current activity' if run_active else 'Last completed run' }}: {{ latest_run['started_at']|localtime }} — {{ latest_run['status'] }}{% if latest_run['message'] %}: {{ latest_run['message'] }}{% endif %}</aside>
     {% endif %}
     <aside>Enrichment budget: {{ enrichment_budget['remaining'] }} remaining of {{ enrichment_budget['limit'] }} today.</aside>
 
@@ -122,7 +124,8 @@
             const run = payload.run;
             runStatus.className = run.status;
             runStatus.dataset.status = run.status;
-            runStatus.textContent = `Last run: ${run.started_at} — ${run.status}${run.message ? `: ${run.message}` : ''}`;
+            const label = ['queued', 'running'].includes(run.status) ? 'Current activity' : 'Last completed run';
+            runStatus.textContent = `${label}: ${run.started_at} — ${run.status}${run.message ? `: ${run.message}` : ''}`;
             if (['queued', 'running'].includes(run.status)) {
               window.setTimeout(pollStatus, 1500);
             } else {

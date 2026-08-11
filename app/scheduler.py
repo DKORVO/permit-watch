@@ -35,12 +35,20 @@ class ScrapeScheduler:
         atexit.register(lambda: self.scheduler.shutdown(wait=False))
         self.scheduler.add_job(self.run, "date", id="startup", replace_existing=True)
 
+    def acquire_action_lock(self, db, run_id=None, source_label=None):
+        """Queue user actions until the single scraper/enrichment slot is free."""
+        if self.lock.acquire(blocking=False):
+            return
+        if run_id:
+            db.keep_run_queued(
+                run_id,
+                f"{source_label or 'Requested action'} queued — waiting for another job to finish",
+            )
+        self.lock.acquire()
+
     def run(self, source_type=None, source_label=None, run_id=None):
         db = self.app.extensions["db"]
-        if not self.lock.acquire(blocking=False):
-            if run_id:
-                db.finish_run(run_id, "error", "Another run is already in progress")
-            return False
+        self.acquire_action_lock(db, run_id, source_label)
         try:
             activity_id = run_id or db.begin_run(source_label or "All sources")
             if run_id:
@@ -67,10 +75,7 @@ class ScrapeScheduler:
 
     def enrich_selected(self, item_ids, source_prefix, source_label, run_id=None):
         db = self.app.extensions["db"]
-        if not self.lock.acquire(blocking=False):
-            if run_id:
-                db.finish_run(run_id, "error", "Another run is already in progress")
-            return False
+        self.acquire_action_lock(db, run_id, source_label)
         try:
             activity_id = run_id or db.begin_run(source_label)
             if run_id:

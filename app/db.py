@@ -151,12 +151,13 @@ class Database:
                 """
                 SELECT
                   COUNT(*) AS total,
-                  SUM(CASE WHEN enrichment_status = 'awaiting' THEN 1 ELSE 0 END) AS awaiting,
-                  SUM(CASE WHEN enrichment_status = 'enriched' THEN 1 ELSE 0 END) AS enriched,
-                  SUM(CASE WHEN enrichment_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                  COALESCE(SUM(CASE WHEN relevant = 1 THEN 1 ELSE 0 END), 0) AS matched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END), 0) AS awaiting,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'enriched' THEN 1 ELSE 0 END), 0) AS enriched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
                   MAX(created_at) AS latest_collected
                 FROM items
-                WHERE relevant = 1 AND LOWER(source_name) LIKE ?
+                WHERE LOWER(source_name) LIKE ?
                 """,
                 (f"{source_prefix.lower()}%",),
             ).fetchone()
@@ -215,6 +216,14 @@ class Database:
                 "INSERT INTO runs(status, message, source_scope) VALUES ('queued', ?, ?)",
                 (message, source_scope),
             ).lastrowid
+
+    def keep_run_queued(self, run_id, message):
+        """Keep a requested action visible while it waits for the scheduler lock."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE runs SET status='queued', finished_at=NULL, message=? WHERE id=?",
+                (message, run_id),
+            )
 
     def start_run(self, run_id, message):
         with self.connection() as conn:
