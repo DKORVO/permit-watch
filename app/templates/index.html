@@ -155,7 +155,10 @@
           articles.forEach(card => {
             const metadataMismatch = metadataFilters.some(filter => {
               if (filter.value === 'all') return false;
-              return String(card.filterMetadata[filter.dataset.field] || '').toLowerCase() !== filter.value;
+              const actual = filter.dataset.field === '_Security Match'
+                ? (card.dataset.relevant === '1' ? 'matched' : 'other')
+                : String(card.filterMetadata[filter.dataset.field] || '').toLowerCase();
+              return actual !== filter.value;
             });
             card.hidden = (status.value !== 'all' && card.dataset.status !== status.value) ||
               metadataMismatch || (term && !card.dataset.search.includes(term));
