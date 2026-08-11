@@ -141,10 +141,18 @@
       }).addTo(map);
       data.points.forEach(point => {
         if (!point.matched_count) return;
-        L.circleMarker([point.lat, point.lng], {
-          radius: Math.min(13, 5 + Math.sqrt(point.matched_count) * 1.6),
-          color: '#fff', weight: 2,
-          fillColor: colors[point.source_group] || '#475467', fillOpacity: .9,
+        const size = Math.min(40, 25 + Math.sqrt(point.matched_count) * 2.5);
+        const badge = document.createElement('span');
+        badge.className = 'map-count-marker preview';
+        badge.textContent = point.matched_count;
+        badge.style.backgroundColor = colors[point.source_group] || '#475467';
+        L.marker([point.lat, point.lng], {
+          icon: L.divIcon({
+            html: badge,
+            className: 'map-count-icon',
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          }),
         }).addTo(map);
       });
     })();
