@@ -151,12 +151,13 @@ class Database:
                 """
                 SELECT
                   COUNT(*) AS total,
-                  SUM(CASE WHEN enrichment_status = 'awaiting' THEN 1 ELSE 0 END) AS awaiting,
-                  SUM(CASE WHEN enrichment_status = 'enriched' THEN 1 ELSE 0 END) AS enriched,
-                  SUM(CASE WHEN enrichment_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                  SUM(CASE WHEN relevant = 1 THEN 1 ELSE 0 END) AS matched,
+                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END) AS awaiting,
+                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'enriched' THEN 1 ELSE 0 END) AS enriched,
+                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'failed' THEN 1 ELSE 0 END) AS failed,
                   MAX(created_at) AS latest_collected
                 FROM items
-                WHERE relevant = 1 AND LOWER(source_name) LIKE ?
+                WHERE LOWER(source_name) LIKE ?
                 """,
                 (f"{source_prefix.lower()}%",),
             ).fetchone()
