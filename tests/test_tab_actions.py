@@ -71,6 +71,21 @@ class RunScopeTests(unittest.TestCase):
             self.assertEqual(db.latest_run("CanadaBuys")["message"], "CanadaBuys failed")
             self.assertEqual(db.latest_run()["source_scope"], "CanadaBuys")
 
+    def test_queued_run_transitions_to_running_and_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "watcher.db")
+            db.initialize()
+            run_id = db.queue_run("MERX", "MERX run queued")
+            self.assertEqual(db.latest_run("MERX")["status"], "queued")
+
+            db.start_run(run_id, "MERX run in progress")
+            self.assertEqual(db.latest_run("MERX")["status"], "running")
+
+            db.finish_run(run_id, "success", "MERX finished")
+            latest = db.latest_run("MERX")
+            self.assertEqual(latest["status"], "success")
+            self.assertEqual(latest["message"], "MERX finished")
+
 
 if __name__ == "__main__":
     unittest.main()
