@@ -38,6 +38,13 @@ class Database:
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               context TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS location_cache (
+              query TEXT PRIMARY KEY,
+              latitude REAL,
+              longitude REAL,
+              precision TEXT NOT NULL DEFAULT 'unknown',
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
             if "metadata" not in columns:
@@ -131,14 +138,37 @@ class Database:
         with self.connection() as conn:
             return conn.execute(
                 """
-                SELECT id, source_name, title, url, metadata
+                SELECT id, source_name, title, url, relevant, enrichment_status, metadata
                 FROM items
-                WHERE relevant = 1
                 ORDER BY id DESC
                 LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
+
+    def cached_coordinates(self):
+        """Return persistent geocoder results keyed by normalized query."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT query, latitude, longitude, precision FROM location_cache"
+            ).fetchall()
+        return {row["query"]: dict(row) for row in rows}
+
+    def cache_coordinates(self, query, latitude, longitude, precision):
+        """Persist a geocoder result, including unresolved queries."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO location_cache(query, latitude, longitude, precision)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(query) DO UPDATE SET
+                  latitude=excluded.latitude,
+                  longitude=excluded.longitude,
+                  precision=excluded.precision,
+                  updated_at=CURRENT_TIMESTAMP
+                """,
+                (query, latitude, longitude, precision),
+            )
 
     def recent_items(self, limit=100):
         with self.connection() as conn:
