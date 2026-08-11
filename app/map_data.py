@@ -154,7 +154,7 @@ def build_map_points(rows, coordinate_cache=None):
         )
         group["count"] += 1
         group["matched_count"] += int(bool(item.get("relevant")))
-        if len(group["items"]) < 50:
+        if len(group["items"]) < 3000:
             group["items"].append(
                 {
                     "title": item.get("title") or "Untitled finding",
