@@ -151,10 +151,10 @@ class Database:
                 """
                 SELECT
                   COUNT(*) AS total,
-                  SUM(CASE WHEN relevant = 1 THEN 1 ELSE 0 END) AS matched,
-                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END) AS awaiting,
-                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'enriched' THEN 1 ELSE 0 END) AS enriched,
-                  SUM(CASE WHEN relevant = 1 AND enrichment_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                  COALESCE(SUM(CASE WHEN relevant = 1 THEN 1 ELSE 0 END), 0) AS matched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END), 0) AS awaiting,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'enriched' THEN 1 ELSE 0 END), 0) AS enriched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
                   MAX(created_at) AS latest_collected
                 FROM items
                 WHERE LOWER(source_name) LIKE ?
