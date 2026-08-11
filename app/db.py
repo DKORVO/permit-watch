@@ -160,6 +160,22 @@ class Database:
                 ORDER BY id ASC LIMIT ?
             """, (limit,)).fetchall()
 
+    def enrichment_items_by_ids(self, item_ids, source_prefix):
+        """Return selected findings only when they belong to the active tab."""
+        ids = sorted({int(item_id) for item_id in item_ids if int(item_id) > 0})
+        if not ids:
+            return []
+        placeholders = ", ".join("?" for _ in ids)
+        with self.connection() as conn:
+            return conn.execute(
+                f"""
+                SELECT * FROM items
+                WHERE id IN ({placeholders}) AND LOWER(source_name) LIKE ?
+                ORDER BY id ASC
+                """,
+                (*ids, f"{source_prefix.lower()}%"),
+            ).fetchall()
+
     def update_enrichment(self, item_id, summary, status):
         with self.connection() as conn:
             conn.execute(
