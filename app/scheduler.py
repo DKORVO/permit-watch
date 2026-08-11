@@ -20,12 +20,16 @@ class ScrapeScheduler:
         atexit.register(lambda: self.scheduler.shutdown(wait=False))
         self.scheduler.add_job(self.run, "date", id="startup", replace_existing=True)
 
-    def run(self, source_type=None, source_label=None):
+    def run(self, source_type=None, source_label=None, run_id=None):
+        db = self.app.extensions["db"]
         if not self.lock.acquire(blocking=False):
+            if run_id:
+                db.finish_run(activity_id, "error", "Another run is already in progress")
             return False
         try:
-            db = self.app.extensions["db"]
-            run_id = db.begin_run(source_label or "All sources")
+            activity_id = run_id or db.begin_run(source_label or "All sources")
+            if run_id:
+                db.start_run(run_id, f"{source_label} run in progress")
             try:
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = scrape_all(
@@ -41,17 +45,21 @@ class ScrapeScheduler:
                 )
             except Exception as exc:
                 self.app.logger.exception("Scrape run failed")
-                db.finish_run(run_id, "error", str(exc)[:1000])
+                db.finish_run(activity_id, "error", str(exc)[:1000])
             return True
         finally:
             self.lock.release()
 
-    def enrich_selected(self, item_ids, source_prefix, source_label):
+    def enrich_selected(self, item_ids, source_prefix, source_label, run_id=None):
+        db = self.app.extensions["db"]
         if not self.lock.acquire(blocking=False):
+            if run_id:
+                db.finish_run(run_id, "error", "Another run is already in progress")
             return False
         try:
-            db = self.app.extensions["db"]
-            run_id = db.begin_run(source_label)
+            activity_id = run_id or db.begin_run(source_label)
+            if run_id:
+                db.start_run(run_id, f"{source_label} selected enrichment in progress")
             try:
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
                 result = enrich_selected_items(
@@ -82,7 +90,7 @@ class ScrapeScheduler:
             return False
         try:
             db = self.app.extensions["db"]
-            run_id = db.begin_run("All sources")
+            activity_id = db.begin_run("All sources")
             try:
                 limit = env_int("ENRICHMENT_RETRY_LIMIT", 10)
                 daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
@@ -97,7 +105,7 @@ class ScrapeScheduler:
                 )
             except Exception as exc:
                 self.app.logger.exception("Enrichment retry failed")
-                db.finish_run(run_id, "error", f"Enrichment retry: {str(exc)[:950]}")
+                db.finish_run(activity_id, "error", f"Enrichment retry: {str(exc)[:950]}")
             return True
         finally:
             self.lock.release()
