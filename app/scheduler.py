@@ -1,9 +1,11 @@
 import atexit
+import os
 import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import env_int
 from .enrichment import enrich_item
+from .geocoding import geocode_map_locations
 from .scraper import (
     enrich_selected_items,
     rescore_stored_security_items,
@@ -58,13 +60,19 @@ class ScrapeScheduler:
                 result = scrape_all(
                     self.app.config["DATA_DIR"], db, enrich_item, daily_limit, source_type
                 )
+                geocode_result = geocode_map_locations(
+                    db,
+                    os.getenv("GEOAPIFY_API_KEY", ""),
+                    min(500, env_int("GEOCODING_BATCH_LIMIT", 100, minimum=0)),
+                )
                 budget = db.enrichment_budget(daily_limit)
                 db.finish_run(
                     activity_id,
                     "success",
                     f"{source_label + ': ' if source_label else ''}"
                     f"{result['new']} new from {result['seen']} items ({result['relevant']} relevant); "
-                    f"enrichment budget {budget['used']}/{budget['limit']} today",
+                    f"enrichment budget {budget['used']}/{budget['limit']} today; "
+                    f"mapped {geocode_result['resolved']}/{geocode_result['requested']} new locations",
                 )
             except Exception as exc:
                 self.app.logger.exception("Scrape run failed")
