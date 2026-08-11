@@ -155,7 +155,7 @@ def canadabuys():
 def home():
     db = current_app.extensions["db"]
     daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
-    map_data = build_map_points(db.map_items())
+    map_data = build_map_points(db.map_items(), db.cached_coordinates())
     return render_template(
         "index.html", section="home",
         groups={"awaiting": [], "enriched": [], "failed": []}, total_items=0,
@@ -185,7 +185,7 @@ def home():
 @bp.get("/map")
 def opportunity_map():
     db = current_app.extensions["db"]
-    map_data = build_map_points(db.map_items())
+    map_data = build_map_points(db.map_items(), db.cached_coordinates())
     return render_template(
         "map.html",
         section="map",
