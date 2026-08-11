@@ -84,6 +84,26 @@ class Database:
             """, item)
             return cursor.rowcount == 1
 
+    def stored_security_items(self):
+        """Return stored MERX and CanadaBuys rows for matcher migrations."""
+        with self.connection() as conn:
+            return conn.execute(
+                """
+                SELECT id, source_name, title, excerpt, metadata
+                FROM items
+                WHERE LOWER(source_name) LIKE 'merx%'
+                   OR LOWER(source_name) LIKE 'canadabuys%'
+                """
+            ).fetchall()
+
+    def update_item_relevance(self, item_id, relevant, metadata):
+        """Update matcher-owned fields without altering saved enrichment."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE items SET relevant = ?, metadata = ? WHERE id = ?",
+                (int(bool(relevant)), metadata, item_id),
+            )
+
     def item_exists(self, fingerprint, url=None):
         """Return whether a finding already exists by content or stable URL."""
         with self.connection() as conn:
