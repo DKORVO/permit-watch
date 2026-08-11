@@ -106,9 +106,19 @@
           });
           if (!items.length) return;
           const style = styles[point.source_group] || {color: '#475467'};
-          const marker = L.circleMarker([point.lat, point.lng], {
-            radius: Math.min(15, 6 + Math.sqrt(items.length) * 1.8), color: '#fff', weight: 2,
-            fillColor: style.color, fillOpacity: .9,
+          const size = Math.min(46, 28 + Math.sqrt(items.length) * 3);
+          const badge = document.createElement('span');
+          badge.className = 'map-count-marker';
+          badge.textContent = items.length;
+          badge.style.backgroundColor = style.color;
+          badge.setAttribute('aria-label', `${items.length} findings at ${point.location}`);
+          const marker = L.marker([point.lat, point.lng], {
+            icon: L.divIcon({
+              html: badge,
+              className: 'map-count-icon',
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            }),
           });
           marker.bindPopup(popupFor(point, items), {maxWidth: 380});
           marker.bindTooltip(`${point.location}: ${items.length}`);
