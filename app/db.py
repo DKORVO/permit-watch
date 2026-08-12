@@ -278,7 +278,7 @@ class Database:
         with self.connection() as conn:
             return conn.execute("""
                 SELECT * FROM items
-                WHERE relevant = 1 AND enrichment_status = 'failed'
+                WHERE relevant = 1 AND lifecycle_status != 'closed' AND enrichment_status = 'failed'
                 ORDER BY id ASC LIMIT ?
             """, (limit,)).fetchall()
 
@@ -292,7 +292,7 @@ class Database:
             return conn.execute(
                 f"""
                 SELECT * FROM items
-                WHERE id IN ({placeholders}) AND LOWER(source_name) LIKE ?
+                WHERE id IN ({placeholders}) AND LOWER(source_name) LIKE ? AND lifecycle_status != 'closed'
                 ORDER BY id ASC
                 """,
                 (*ids, f"{source_prefix.lower()}%"),
