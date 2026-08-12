@@ -1,8 +1,11 @@
 import json
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from pathlib import Path
+
+from .lifecycle import lifecycle_fields
 
 
 class Database:
@@ -60,6 +63,18 @@ class Database:
                         ELSE 'enriched'
                     END
                 """)
+            if "closing_at" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN closing_at TEXT")
+            if "lifecycle_status" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'unknown'")
+            rows = conn.execute("SELECT id, source_name, metadata FROM items").fetchall()
+            for row in rows:
+                closing_at, lifecycle_status = lifecycle_fields(row["source_name"], row["metadata"])
+                conn.execute(
+                    "UPDATE items SET closing_at = ?, lifecycle_status = ? WHERE id = ?",
+                    (closing_at, lifecycle_status, row["id"]),
+                )
+
             run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
             if "source_scope" not in run_columns:
                 conn.execute(
@@ -67,6 +82,9 @@ class Database:
                 )
 
     def add_item(self, item):
+        item["closing_at"], item["lifecycle_status"] = lifecycle_fields(
+            item["source_name"], item.get("metadata")
+        )
         with self.connection() as conn:
             existing = conn.execute("SELECT id FROM items WHERE fingerprint = ?", (item["fingerprint"],)).fetchone()
             # Ottawa's detail URL is a stable application identifier.  Reuse
@@ -80,14 +98,17 @@ class Database:
                     UPDATE items
                     SET source_name = :source_name, title = :title, url = :url,
                         published_text = :published_text, excerpt = :excerpt,
-                        fingerprint = :fingerprint, relevant = :relevant, metadata = :metadata
+                        fingerprint = :fingerprint, relevant = :relevant, metadata = :metadata,
+                        closing_at = :closing_at, lifecycle_status = :lifecycle_status
                     WHERE id = :id
                 """, {**item, "id": existing["id"]})
                 return False
             cursor = conn.execute("""
                 INSERT OR IGNORE INTO items
-                (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment, metadata, enrichment_status)
-                VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant, :enrichment, :metadata, :enrichment_status)
+                (source_name, title, url, published_text, excerpt, fingerprint, relevant, enrichment,
+                 metadata, enrichment_status, closing_at, lifecycle_status)
+                VALUES (:source_name, :title, :url, :published_text, :excerpt, :fingerprint, :relevant,
+                        :enrichment, :metadata, :enrichment_status, :closing_at, :lifecycle_status)
             """, item)
             return cursor.rowcount == 1
 
@@ -140,6 +161,7 @@ class Database:
                 """
                 SELECT id, source_name, title, url, relevant, enrichment_status, metadata
                 FROM items
+                WHERE lifecycle_status != 'closed'
                 ORDER BY id DESC
                 LIMIT ?
                 """,
@@ -194,11 +216,11 @@ class Database:
             row = conn.execute(
                 """
                 SELECT
-                  COUNT(*) AS total,
-                  COALESCE(SUM(CASE WHEN relevant = 1 THEN 1 ELSE 0 END), 0) AS matched,
-                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END), 0) AS awaiting,
-                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'enriched' THEN 1 ELSE 0 END), 0) AS enriched,
-                  COALESCE(SUM(CASE WHEN relevant = 1 AND enrichment_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+                  COALESCE(SUM(CASE WHEN lifecycle_status != 'closed' THEN 1 ELSE 0 END), 0) AS total,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND lifecycle_status != 'closed' THEN 1 ELSE 0 END), 0) AS matched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND lifecycle_status != 'closed' AND enrichment_status = 'awaiting' THEN 1 ELSE 0 END), 0) AS awaiting,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND lifecycle_status != 'closed' AND enrichment_status = 'enriched' THEN 1 ELSE 0 END), 0) AS enriched,
+                  COALESCE(SUM(CASE WHEN relevant = 1 AND lifecycle_status != 'closed' AND enrichment_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
                   MAX(created_at) AS latest_collected
                 FROM items
                 WHERE LOWER(source_name) LIKE ?
@@ -206,6 +228,36 @@ class Database:
                 (f"{source_prefix.lower()}%",),
             ).fetchone()
         return dict(row)
+
+    def refresh_lifecycle_statuses(self):
+        """Re-evaluate deadlines so records close without requiring a re-scrape."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT id, source_name, metadata FROM items WHERE lifecycle_status != 'closed'"
+            ).fetchall()
+            for row in rows:
+                closing_at, status = lifecycle_fields(row["source_name"], row["metadata"])
+                conn.execute(
+                    "UPDATE items SET closing_at = ?, lifecycle_status = ? WHERE id = ?",
+                    (closing_at, status, row["id"]),
+                )
+
+    def purge_closed_items(self, retention_days):
+        """Delete tender records after the configured closed-record retention."""
+        if retention_days <= 0:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """DELETE FROM items
+                   WHERE lifecycle_status = 'closed'
+                     AND closing_at IS NOT NULL
+                     AND closing_at < ?""",
+                (cutoff,),
+            )
+            return cursor.rowcount
 
     def enrichment_budget(self, limit):
         """Return the current UTC-day request allowance used by OpenRouter."""
