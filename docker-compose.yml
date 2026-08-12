@@ -11,6 +11,7 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
       SCRAPE_INTERVAL_MINUTES: ${SCRAPE_INTERVAL_MINUTES:-360}
       ENRICHMENT_DAILY_LIMIT: ${ENRICHMENT_DAILY_LIMIT:-100}
+      CLOSED_RETENTION_DAYS: ${CLOSED_RETENTION_DAYS:-90}
       TZ: ${TZ:-America/Toronto}
     volumes:
       # Create this dataset/path first and place sources.json in it.
