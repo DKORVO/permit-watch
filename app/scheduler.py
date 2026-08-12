@@ -60,6 +60,10 @@ class ScrapeScheduler:
                 result = scrape_all(
                     self.app.config["DATA_DIR"], db, enrich_item, daily_limit, source_type
                 )
+                db.refresh_lifecycle_statuses()
+                purged = db.purge_closed_items(
+                    env_int("CLOSED_RETENTION_DAYS", 90, minimum=0)
+                )
                 geocode_result = geocode_map_locations(
                     db,
                     os.getenv("GEOAPIFY_API_KEY", ""),
@@ -72,7 +76,8 @@ class ScrapeScheduler:
                     f"{source_label + ': ' if source_label else ''}"
                     f"{result['new']} new from {result['seen']} items ({result['relevant']} relevant); "
                     f"enrichment budget {budget['used']}/{budget['limit']} today; "
-                    f"mapped {geocode_result['resolved']}/{geocode_result['requested']} new locations",
+                    f"mapped {geocode_result['resolved']}/{geocode_result['requested']} new locations; "
+                    f"{purged} expired closed records removed",
                 )
             except Exception as exc:
                 self.app.logger.exception("Scrape run failed")
