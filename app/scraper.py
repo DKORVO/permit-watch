@@ -744,6 +744,8 @@ def collect(source, session, db=None):
         # Also recognize earlier sources.json entries created before the
         # dedicated MERX type was introduced.
         items = merx_items(source, session)
+    elif source_type == "seao":
+        items = seao_items(source, session)
     else:
         get_items = rss_items if source_type == "rss" else html_items
         items = get_items(source, session)
