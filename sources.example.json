@@ -48,6 +48,15 @@
       "relevance_profile": "physical_security_integrator",
       "minimum_relevance_score": 6,
       "enabled": true
+    },
+    {
+      "name": "SEAO — Quebec opportunities",
+      "type": "seao",
+      "dataset_id": "d23b2e02-085d-43e5-9e6e-e1d558ebfdd5",
+      "resource_limit": 8,
+      "relevance_profile": "physical_security_integrator",
+      "minimum_relevance_score": 6,
+      "enabled": true
     }
   ]
 }
