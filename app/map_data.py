@@ -135,6 +135,7 @@ def build_map_points(rows, coordinate_cache=None):
         source_group = (
             "ottawa" if normalized(source).startswith("city of ottawa")
             else "canadabuys" if normalized(source).startswith("canadabuys")
+            else "seao" if normalized(source).startswith("seao")
             else "merx"
         )
         key = (latitude, longitude, source_group, location)
