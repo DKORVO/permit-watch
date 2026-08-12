@@ -11,6 +11,8 @@ from urllib.parse import quote, urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from .seao import DATASET_ID as SEAO_DATASET_ID, seao_items
+
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "PermitWatch/0.1 (local civic-information monitor; contact: administrator)"
@@ -43,6 +45,16 @@ CANADABUYS_SOURCE = {
     "minimum_relevance_score": 6,
 }
 
+SEAO_SOURCE = {
+    "name": "SEAO — Quebec opportunities",
+    "type": "seao",
+    "dataset_id": SEAO_DATASET_ID,
+    "resource_limit": 8,
+    "enabled": True,
+    "relevance_profile": "physical_security_integrator",
+    "minimum_relevance_score": 6,
+}
+
 LEGACY_MERX_SOURCE_NAMES = {
     "MERX — Ottawa opportunities",
     "MERX — Gatineau opportunities",
@@ -56,12 +68,18 @@ PHYSICAL_SECURITY_TERMS = (
     "electronic security systems", "integrated security system",
     "integrated security systems", "physical security system", "physical security systems",
     "perimeter detection", "perimeter security", "security management system",
+    "contrôle d\'accès", "controle d\'acces", "lecteur de carte", "lecteurs de cartes",
+    "vidéosurveillance", "videosurveillance", "caméra de sécurité", "camera de securite",
+    "détection d\'intrusion", "detection d\'intrusion", "alarme anti-intrusion",
+    "interphone", "sécurité électronique", "securite electronique",
 )
 SECURITY_WORK_TERMS = (
     "integrator", "integration", "supply and install", "supply", "install",
     "installation", "replace", "replacement", "upgrade", "retrofit",
     "modernization", "commissioning", "programming", "maintenance", "repair",
     "support", "design-build",
+    "intégration", "fourniture et installation", "installer", "remplacement",
+    "mise à niveau", "mise a niveau", "entretien",
 )
 SECURITY_BRANDS = (
     "genetec", "lenel", "avigilon", "milestone", "kantech", "axis",
@@ -112,7 +130,7 @@ def load_sources(data_dir: Path):
     # Replace the legacy Ottawa/Gatineau defaults with the nationwide source.
     sources = [source for source in sources if source.get("name") not in LEGACY_MERX_SOURCE_NAMES]
     source_names = {source.get("name") for source in sources}
-    builtin_sources = [*MERX_SOURCES, CANADABUYS_SOURCE]
+    builtin_sources = [*MERX_SOURCES, CANADABUYS_SOURCE, SEAO_SOURCE]
     sources.extend(source for source in builtin_sources if source["name"] not in source_names)
     return [s for s in sources if s.get("enabled", True)]
 

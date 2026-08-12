@@ -24,6 +24,7 @@
       <a href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
       <a href="{{ url_for('views.merx') }}">MERX</a>
       <a href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
+      <a href="{{ url_for('views.seao') }}">SEAO</a>
       <a class="active" aria-current="page" href="{{ url_for('views.opportunity_map') }}">Map</a>
     </nav>
 
@@ -36,11 +37,11 @@
         <label class="map-search"><span>Search</span><input id="map-search" type="search" placeholder="Title, location, or source…" autocomplete="off"></label>
         <label><span>Security relevance</span><select id="map-relevance"><option value="matched" selected>Matched</option><option value="all">All findings</option><option value="other">Other</option></select></label>
         <label><span>Enrichment</span><select id="map-enrichment"><option value="all">All statuses</option><option value="awaiting">Awaiting</option><option value="enriched">Enriched</option><option value="failed">Failed</option></select></label>
-        <label><span>Source</span><select id="map-source"><option value="all">All sources</option><option value="ottawa">City of Ottawa</option><option value="merx">MERX</option><option value="canadabuys">CanadaBuys</option></select></label>
+        <label><span>Source</span><select id="map-source"><option value="all">All sources</option><option value="ottawa">City of Ottawa</option><option value="merx">MERX</option><option value="canadabuys">CanadaBuys</option><option value="seao">SEAO</option></select></label>
         <div class="map-control-footer"><button id="map-clear" type="button" class="button-link secondary">Clear</button><strong id="map-result-count" aria-live="polite"></strong></div>
       </div>
       <div class="map-legend" aria-label="Map legend">
-        <span><i class="ottawa"></i>City of Ottawa</span><span><i class="merx"></i>MERX</span><span><i class="canadabuys"></i>CanadaBuys</span>
+        <span><i class="ottawa"></i>City of Ottawa</span><span><i class="merx"></i>MERX</span><span><i class="canadabuys"></i>CanadaBuys</span><span><i class="seao"></i>SEAO</span>
         <small>Province-only locations are approximate.</small>
       </div>
       <div id="opportunity-map" aria-label="Interactive map of opportunities"></div>
@@ -55,6 +56,7 @@
         ottawa: {label: 'City of Ottawa', color: '#175cd3'},
         merx: {label: 'MERX', color: '#0e7490'},
         canadabuys: {label: 'CanadaBuys', color: '#7c3aed'},
+        seao: {label: 'SEAO', color: '#c2410c'},
       };
       const controls = {
         search: document.getElementById('map-search'),
@@ -139,7 +141,7 @@
         if (!fitted && bounds.length) { map.fitBounds(bounds, {padding: [30, 30], maxZoom: 8}); fitted = true; }
       };
 
-      L.control.layers(null, {'City of Ottawa': layers.ottawa, 'MERX': layers.merx, 'CanadaBuys': layers.canadabuys}, {collapsed: false}).addTo(map);
+      L.control.layers(null, {'City of Ottawa': layers.ottawa, 'MERX': layers.merx, 'CanadaBuys': layers.canadabuys, 'SEAO': layers.seao}, {collapsed: false}).addTo(map);
       [controls.search, controls.relevance, controls.enrichment, controls.source].forEach(control => {
         control.addEventListener(control === controls.search ? 'input' : 'change', renderMarkers);
       });
