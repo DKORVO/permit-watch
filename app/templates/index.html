@@ -81,7 +81,7 @@
       <label>{{ filter['label'] }}
         <select class="metadata-filter" data-field="{{ filter['field'] }}">
           <option value="all">All</option>
-          {% for option in filter['options'] %}<option value="{{ option|lower }}"{% if section in ['merx', 'canadabuys'] and filter['field'] == '_Security Match' and option == 'matched' %} selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>{% endfor %}
+          {% for option in filter['options'] %}<option value="{{ option|lower }}"{% if section in ['merx', 'canadabuys', 'seao'] and filter['field'] == '_Security Match' and option == 'matched' %} selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>{% endfor %}
         </select>
       </label>
       {% endfor %}
@@ -105,7 +105,7 @@
           <div class="meta">
             <span>{{ item['source_name'] }}</span>
             {% if item['published_text'] %}<span>{{ item['published_text'] }}</span>{% endif %}
-            {% if section in ['merx', 'canadabuys'] %}
+            {% if section in ['merx', 'canadabuys', 'seao'] %}
               <b class="relevance-badge {{ 'matched' if item['relevant'] else 'other' }}">{{ 'Matched' if item['relevant'] else 'Other' }}</b>
             {% elif item['relevant'] %}<b class="relevance-badge matched">Relevant</b>{% endif %}
             {% if item['lifecycle_status'] == 'closed' %}<b class="lifecycle-badge closed">Closed</b>{% elif item['lifecycle_status'] == 'unknown' %}<b class="lifecycle-badge unknown">Date unknown</b>{% endif %}
@@ -132,7 +132,7 @@
   <script>
     (() => {
       const data = {{ map_data|tojson }};
-      const colors = {ottawa: '#175cd3', merx: '#0e7490', canadabuys: '#7c3aed'};
+      const colors = {ottawa: '#175cd3', merx: '#0e7490', canadabuys: '#7c3aed', seao: '#c2410c'};
       const map = L.map('map-preview', {
         zoomControl: false, attributionControl: true, dragging: false,
         scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
