@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% if section != 'home' %}{{ page_title }} · {% endif %}Watcher</title>
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='watcher-logo-complete.png') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='watcher-logo-v2.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   {% if section == 'home' %}
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
@@ -14,7 +14,7 @@
   <main>
     <header>
       <div class="brand">
-        <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo-complete.png') }}" alt="">
+        <img class="brand-logo" src="{{ url_for('static', filename='watcher-logo-v2.png') }}" alt="">
         <div>
           <h1>Watcher</h1>
           <p>Public-notice monitor · verify findings at the source</p>
