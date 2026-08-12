@@ -13,8 +13,7 @@ header {
   border-radius: .9rem; box-shadow: 0 8px 24px rgba(15, 67, 83, .08);
 }
 .brand { display: flex; align-items: center; gap: .85rem; min-width: 0; }
-.brand-logo { position: relative; width: 3.25rem; height: 3.25rem; overflow: hidden; flex: 0 0 auto; }
-.brand-logo img { position: absolute; width: 164.1%; max-width: none; height: auto; left: -32.05%; top: 3.5%; }
+.brand-logo { width: 3.25rem; height: 3.25rem; object-fit: contain; flex: 0 0 auto; }
 h1 { margin: 0; color: #075985; font-size: 1.55rem; letter-spacing: -.025em; }
 header p, .meta, small { color: #667085; }
 header p { margin: .18rem 0 0; font-size: .88rem; }
