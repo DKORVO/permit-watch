@@ -14,6 +14,7 @@ services:
       DATA_DIR: /data
       SCRAPE_INTERVAL_MINUTES: "360"
       ENRICHMENT_DAILY_LIMIT: "100"
+      CLOSED_RETENTION_DAYS: "90"
       # Paste your replacement OpenRouter key here in TrueNAS only.
       # Do not add it to GitHub.
       OPENROUTER_API_KEY: ""
