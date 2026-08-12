@@ -35,7 +35,21 @@ def parse_closing_at(value):
     text = " ".join(str(value or "").replace("\u00a0", " ").split())
     if not text:
         return None
-    text = re.sub(r"\s+(EST|EDT|AST|ADT|CST|CDT|MST|MDT|PST|PDT)$", "", text, flags=re.I)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        pass
+    suffixes = {
+        "EST": -5, "EDT": -4, "AST": -4, "ADT": -3, "CST": -6,
+        "CDT": -5, "MST": -7, "MDT": -6, "PST": -8, "PDT": -7,
+    }
+    suffix_match = re.search(r"\s+([A-Z]{3})$", text, flags=re.I)
+    explicit_zone = None
+    if suffix_match and suffix_match.group(1).upper() in suffixes:
+        explicit_zone = timezone(timedelta(hours=suffixes[suffix_match.group(1).upper()]))
+        text = text[:suffix_match.start()].strip()
     text = re.sub(r"\s+at\s+", " ", text, flags=re.I)
     for fmt in DATE_FORMATS:
         try:
