@@ -59,6 +59,7 @@ def metadata_options(items, field):
 def render_source_page(section):
     db = current_app.extensions["db"]
     daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
+    db.refresh_lifecycle_statuses()
     if section == "ottawa":
         rows = db.recent_items_for_source("City of Ottawa")
         page_title = "City of Ottawa"
