@@ -19,6 +19,12 @@ SOURCE_ACTIONS = {
         "label": "MERX",
         "endpoint": "views.merx",
     },
+    "seao": {
+        "source_type": "seao",
+        "source_prefix": "SEAO",
+        "label": "SEAO",
+        "endpoint": "views.seao",
+    },
     "canadabuys": {
         "source_type": "canadabuys",
         "source_prefix": "CanadaBuys",
@@ -97,7 +103,7 @@ def render_source_page(section):
             ("newest", "Newest collected"),
             ("title", "Title A–Z"),
         ]
-    else:
+    elif section == "canadabuys":
         rows = db.recent_items_for_source("CanadaBuys", relevant_only=False)
         page_title = "CanadaBuys"
         page_subtitle = "Federal tender opportunities for physical-security integrators"
@@ -108,6 +114,27 @@ def render_source_page(section):
             ("Category", "Category"),
             ("Organization", "Organization"),
             ("Notice Type", "Notice type"),
+            ("Province", "Province"),
+            ("City", "City"),
+        ]
+        sort_options = [
+            ("closing", "Closing soon"),
+            ("publication", "Publication date"),
+            ("newest", "Newest collected"),
+            ("title", "Title A–Z"),
+        ]
+
+    else:
+        rows = db.recent_items_for_source("SEAO", relevant_only=False)
+        page_title = "SEAO"
+        page_subtitle = "Quebec physical-security tender opportunities"
+        empty_message = "No SEAO tender opportunities have been collected yet."
+        search_placeholder = "Title, organization, city, category, security technology…"
+        filter_fields = [
+            ("_Security Match", "Security relevance"),
+            ("Organization", "Organization"),
+            ("Procurement Method", "Procurement method"),
+            ("Category", "Category"),
             ("Province", "Province"),
             ("City", "City"),
         ]
@@ -147,6 +174,11 @@ def merx():
     return render_source_page("merx")
 
 
+@bp.get("/seao")
+def seao():
+    return render_source_page("seao")
+
+
 @bp.get("/canadabuys")
 def canadabuys():
     return render_source_page("canadabuys")
@@ -156,6 +188,7 @@ def canadabuys():
 def home():
     db = current_app.extensions["db"]
     daily_limit = env_int("ENRICHMENT_DAILY_LIMIT", 100)
+    db.refresh_lifecycle_statuses()
     map_data = build_map_points(db.map_items(), db.cached_coordinates())
     return render_template(
         "index.html", section="home",
@@ -172,6 +205,11 @@ def home():
             {
                 "name": "MERX", "description": "Canada-wide physical-security integration opportunities",
                 "endpoint": "views.merx", "summary": db.source_summary("MERX"),
+                "show_matches": True,
+            },
+            {
+                "name": "SEAO", "description": "Quebec physical-security tender opportunities",
+                "endpoint": "views.seao", "summary": db.source_summary("SEAO"),
                 "show_matches": True,
             },
             {
