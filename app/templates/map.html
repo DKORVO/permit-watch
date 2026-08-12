@@ -24,6 +24,7 @@
       <a href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
       <a href="{{ url_for('views.merx') }}">MERX</a>
       <a href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
+      <a href="{{ url_for('views.seao') }}">SEAO</a>
       <a class="active" aria-current="page" href="{{ url_for('views.opportunity_map') }}">Map</a>
     </nav>
 
@@ -54,7 +55,8 @@
       const styles = {
         ottawa: {label: 'City of Ottawa', color: '#175cd3'},
         merx: {label: 'MERX', color: '#0e7490'},
-        canadabuys: {label: 'CanadaBuys', color: '#7c3aed'},\n        seao: {label: 'SEAO', color: '#c2410c'},
+        canadabuys: {label: 'CanadaBuys', color: '#7c3aed'},
+        seao: {label: 'SEAO', color: '#c2410c'},
       };
       const controls = {
         search: document.getElementById('map-search'),
