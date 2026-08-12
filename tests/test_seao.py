@@ -1,9 +1,9 @@
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.lifecycle import lifecycle_fields, parse_closing_at
-from app.scraper import physical_security_score
+from app.scraper import collect, physical_security_score
 from app.seao import seao_items
 
 
@@ -47,6 +47,31 @@ class SeaoConnectorTests(unittest.TestCase):
         score, reasons, _ = physical_security_score(items[0], metadata)
         self.assertGreaterEqual(score, 6)
         self.assertIn("vidéosurveillance", reasons)
+
+
+    @patch("app.scraper.seao_items")
+    def test_collect_dispatches_seao_without_a_top_level_url(self, mocked_items):
+        mocked_items.return_value = iter([
+            {
+                "title": "Système de vidéosurveillance",
+                "url": "https://www.seao.ca/avis/12345",
+                "published_text": "2026-08-12",
+                "excerpt": "Installation de vidéosurveillance",
+                "metadata": "{}",
+            }
+        ])
+        source = {
+            "name": "SEAO — Quebec opportunities",
+            "type": "seao",
+            "relevance_profile": "physical_security_integrator",
+            "minimum_relevance_score": 6,
+        }
+
+        items = list(collect(source, Mock()))
+
+        mocked_items.assert_called_once()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["source_name"], source["name"])
 
     def test_iso_deadline_preserves_its_offset(self):
         self.assertEqual(
