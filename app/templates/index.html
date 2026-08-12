@@ -69,6 +69,7 @@
       <a class="{% if section == 'ottawa' %}active{% endif %}" href="{{ url_for('views.ottawa') }}">City of Ottawa</a>
       <a class="{% if section == 'merx' %}active{% endif %}" href="{{ url_for('views.merx') }}">MERX</a>
       <a class="{% if section == 'canadabuys' %}active{% endif %}" href="{{ url_for('views.canadabuys') }}">CanadaBuys</a>
+      <a href="{{ url_for('views.opportunity_map') }}">Map</a>
     </nav>
     <div class="page-heading"><h2>{{ page_title }}</h2><p>{{ page_subtitle }}</p></div>
 
