@@ -224,6 +224,7 @@ def home():
 @bp.get("/map")
 def opportunity_map():
     db = current_app.extensions["db"]
+    db.refresh_lifecycle_statuses()
     map_data = build_map_points(db.map_items(), db.cached_coordinates())
     return render_template(
         "map.html",
