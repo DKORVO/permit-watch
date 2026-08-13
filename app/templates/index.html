@@ -101,7 +101,7 @@
       <section class="finding-group {{ status }}">
         <h2>{{ title }} <span>{{ groups[status]|length }}</span></h2>
         {% for item in groups[status] %}
-        <article data-status="{{ status }}" data-lifecycle="{{ item['lifecycle_status'] }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-metadata="{{ item['metadata']|tojson|forceescape }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-publication="{{ item['metadata'].get('Publication', item['published_text']) }}" data-received="{{ item['metadata'].get('Date Received', item['published_text']) }}" data-address="{{ item['metadata'].get('Addresses', '')|lower }}" data-title="{{ item['title']|lower }}" data-relevant="{{ item['relevant'] }}">
+        <article id="finding-{{ item['id'] }}" data-item-id="{{ item['id'] }}" data-status="{{ status }}" data-lifecycle="{{ item['lifecycle_status'] }}" data-search="{{ (item['title'] ~ ' ' ~ item['source_name'] ~ ' ' ~ item['excerpt'] ~ ' ' ~ item['metadata'].values()|join(' '))|lower }}" data-metadata="{{ item['metadata']|tojson|forceescape }}" data-created="{{ item['created_at'] }}" data-closing="{{ item['metadata'].get('Closing Date', '') }}" data-publication="{{ item['metadata'].get('Publication', item['published_text']) }}" data-received="{{ item['metadata'].get('Date Received', item['published_text']) }}" data-address="{{ item['metadata'].get('Addresses', '')|lower }}" data-title="{{ item['title']|lower }}" data-relevant="{{ item['relevant'] }}">
           <label class="finding-select"><input class="enrichment-select" type="checkbox"{% if item['lifecycle_status'] == 'closed' %} disabled{% endif %} name="item_id" value="{{ item['id'] }}" form="enrichment-form"> Select for enrichment</label>
           <div class="meta">
             <span>{{ item['source_name'] }}</span>
@@ -175,6 +175,8 @@
       const groups = [...document.querySelectorAll('.finding-group')];
       const cards = [...document.querySelectorAll('.finding-group article')];
       const runStatus = document.querySelector('#run-status');
+      const enrichmentForm = document.querySelector('#enrichment-form');
+      const contextKey = 'watcher-finding-context:' + window.location.pathname;
       if (runStatus && ['queued', 'running'].includes(runStatus.dataset.status)) {
         const pollStatus = async () => {
           try {
@@ -266,8 +268,67 @@
         control.addEventListener('input', update);
         control.addEventListener('change', update);
       });
+      const saveContext = () => {
+        const selected = selections.filter(control => control.checked);
+        sessionStorage.setItem(contextKey, JSON.stringify({
+          savedAt: Date.now(),
+          selectedId: selected[0] ? selected[0].value : '',
+          scrollY: window.scrollY,
+          search: search.value,
+          status: status.value,
+          lifecycle: lifecycle.value,
+          sort: sort.value,
+          metadata: Object.fromEntries(metadataFilters.map(filter => [filter.dataset.field, filter.value])),
+          openDetails: cards
+            .filter(card => card.querySelector('details[open]'))
+            .map(card => card.dataset.itemId),
+        }));
+      };
+      if (enrichmentForm) enrichmentForm.addEventListener('submit', saveContext);
+
+      let restoredContext = null;
+      try {
+        restoredContext = JSON.parse(sessionStorage.getItem(contextKey) || 'null');
+      } catch (_) {
+        sessionStorage.removeItem(contextKey);
+      }
+      if (restoredContext && Date.now() - restoredContext.savedAt < 10 * 60 * 1000) {
+        search.value = restoredContext.search || '';
+        status.value = restoredContext.status || 'all';
+        lifecycle.value = restoredContext.lifecycle || 'open';
+        sort.value = restoredContext.sort || sort.value;
+        metadataFilters.forEach(filter => {
+          const savedValue = restoredContext.metadata && restoredContext.metadata[filter.dataset.field];
+          if (savedValue && [...filter.options].some(option => option.value === savedValue)) {
+            filter.value = savedValue;
+          }
+        });
+        (restoredContext.openDetails || []).forEach(itemId => {
+          const details = document.querySelector('#finding-' + CSS.escape(String(itemId)) + ' details');
+          if (details) details.open = true;
+        });
+      } else if (restoredContext) {
+        sessionStorage.removeItem(contextKey);
+        restoredContext = null;
+      }
       update();
       updateSelection();
+      if (restoredContext) {
+        requestAnimationFrame(() => {
+          const selectedCard = document.querySelector(
+            '#finding-' + CSS.escape(String(restoredContext.selectedId || ''))
+          );
+          if (selectedCard && !selectedCard.hidden) {
+            selectedCard.scrollIntoView({block: 'center'});
+            selectedCard.classList.add('context-restored');
+          } else {
+            window.scrollTo({top: restoredContext.scrollY || 0});
+          }
+        });
+        if (!runStatus || !['queued', 'running'].includes(runStatus.dataset.status)) {
+          sessionStorage.removeItem(contextKey);
+        }
+      }
     })();
   </script> {% endif %}
 </body>
