@@ -125,7 +125,7 @@ def render_source_page(section):
         ]
 
     else:
-        rows = db.recent_items_for_source("SEAO", relevant_only=False)
+        rows = db.recent_items_for_source("SEAO", limit=3000, relevant_only=False)
         page_title = "SEAO"
         page_subtitle = "Quebec physical-security tender opportunities"
         empty_message = "No SEAO tender opportunities have been collected yet."
