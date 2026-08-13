@@ -201,3 +201,8 @@ code { background: #eaecf0; padding: .15rem .3rem; }
   font-size: .78rem; font-weight: 800; line-height: 1;
 }
 .map-count-marker.preview { font-size: .7rem; }
+
+article.context-restored {
+  border-color: #0e7490;
+  box-shadow: 0 0 0 3px rgba(14,116,144,.18), 0 5px 16px rgba(16,24,40,.075);
+}
