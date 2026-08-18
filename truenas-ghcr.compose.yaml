@@ -15,6 +15,18 @@ services:
       SCRAPE_INTERVAL_MINUTES: "360"
       ENRICHMENT_DAILY_LIMIT: "100"
       CLOSED_RETENTION_DAYS: "90"
+
+      # Daily digest runs at 08:00 in TZ. It stays disabled while these are blank.
+      DIGEST_HOUR: "8"
+      DIGEST_MINUTE: "0"
+      DIGEST_EMAIL_TO: ""
+      SMTP_HOST: "smtp.gmail.com"
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: ""
+      SMTP_STARTTLS: "true"
+
       # Paste your replacement OpenRouter key here in TrueNAS only.
       # Do not add it to GitHub.
       OPENROUTER_API_KEY: ""
