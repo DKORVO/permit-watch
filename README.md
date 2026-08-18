@@ -53,6 +53,23 @@ The tab-specific Run action reloads this file and starts a non-overlapping run f
 
 Replace `/data/sources.json` with the contents of `ottawa.sources.json`, then restart the app or select **Run now**. This connector intentionally uses only the City's public application data, filters it to Site Plan Control and Plan of Condominium records, and labels every result with its official source page.
 
+
+
+## Automation and daily email digest
+
+Watcher automatically runs every configured `SCRAPE_INTERVAL_MINUTES` (six hours by default) and once at container startup. Each scheduled run checks every enabled source sequentially, so tab-specific manual runs remain optional.
+
+New records are automatically enriched only when they match the physical-security profile. City of Ottawa development applications are the exception and are all eligible for automatic enrichment. Existing records are not enriched again during later scrapes, and every request still counts against `ENRICHMENT_DAILY_LIMIT`.
+
+The daily digest includes newly matched MERX, CanadaBuys, and SEAO opportunities plus every new City of Ottawa application. It uses a successful-delivery checkpoint, so a failed email is retried with the still-unsent findings on the next digest run. The first digest looks back 24 hours. Configure these environment values in TrueNAS:
+
+- `DIGEST_HOUR` and `DIGEST_MINUTE`: delivery time in `TZ` (defaults to 08:00).
+- `DIGEST_EMAIL_TO`: one or more comma-separated recipients.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM`.
+- `SMTP_STARTTLS`: `true` for port 587 STARTTLS.
+
+Email remains disabled until `SMTP_HOST`, `SMTP_FROM` (or `SMTP_USERNAME`), and `DIGEST_EMAIL_TO` are present. For Gmail, use `smtp.gmail.com`, port `587`, your Gmail address as the username/from address, and a Google App Password rather than your normal account password.
+
 ## Safety and operating rules
 
 - Only add sources you are authorized to access. Review a site’s terms, robots.txt, and any published API/feed first.
