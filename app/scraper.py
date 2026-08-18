@@ -785,6 +785,18 @@ def source_matches(source, source_type):
     return configured_type == source_type
 
 
+
+
+def should_auto_enrich(source, item):
+    """Auto-enrich matched procurement records and every Ottawa application."""
+    if source.get("type") == "ottawa_devapps":
+        return True
+    return (
+        source.get("relevance_profile") == "physical_security_integrator"
+        and bool(item.get("relevant"))
+    )
+
+
 def scrape_all(data_dir, db, enrich, daily_limit=100, source_type=None):
     sources = [source for source in load_sources(data_dir) if source_matches(source, source_type)]
     session = requests.Session()
@@ -795,16 +807,19 @@ def scrape_all(data_dir, db, enrich, daily_limit=100, source_type=None):
             counts["seen"] += 1
             if item["relevant"]:
                 counts["relevant"] += 1
-                # Existing items are refreshed below without calling OpenRouter
-                # again. This keeps a scheduled scrape from consuming quota on
-                # the same historical records every time it runs.
-                if not db.item_exists(item["fingerprint"], item["url"]):
-                    summary, attempted = budgeted_enrich(item, db, enrich, daily_limit, "new finding")
-                    if attempted:
-                        item["enrichment"] = summary
-                        item["enrichment_status"] = enrichment_status(summary)
-                    else:
-                        counts["budget_skipped"] += 1
+            # Existing items are refreshed below without calling OpenRouter
+            # again. Scheduled runs enrich only newly discovered eligible items.
+            if should_auto_enrich(source, item) and not db.item_exists(
+                item["fingerprint"], item["url"]
+            ):
+                summary, attempted = budgeted_enrich(
+                    item, db, enrich, daily_limit, "new automatic finding"
+                )
+                if attempted:
+                    item["enrichment"] = summary
+                    item["enrichment_status"] = enrichment_status(summary)
+                else:
+                    counts["budget_skipped"] += 1
             if db.add_item(item):
                 counts["new"] += 1
         if index < len(sources) - 1:

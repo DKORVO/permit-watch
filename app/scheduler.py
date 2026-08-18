@@ -4,6 +4,7 @@ import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import env_int
+from .digest import send_daily_digest
 from .enrichment import enrich_item
 from .geocoding import geocode_map_locations
 from .scraper import (
@@ -32,7 +33,16 @@ class ScrapeScheduler:
             # from starting. The next restart can safely retry it.
             self.app.logger.exception("Unable to rescore stored security items")
         minutes = env_int("SCRAPE_INTERVAL_MINUTES", 360, minimum=15)
-        self.scheduler.add_job(self.run, "interval", minutes=minutes, id="scrape", max_instances=1, coalesce=True)
+        self.scheduler.add_job(
+            self.run, "interval", minutes=minutes, id="scrape",
+            max_instances=1, coalesce=True,
+        )
+        digest_hour = min(23, env_int("DIGEST_HOUR", 8, minimum=0))
+        digest_minute = min(59, env_int("DIGEST_MINUTE", 0, minimum=0))
+        self.scheduler.add_job(
+            self.send_digest, "cron", hour=digest_hour, minute=digest_minute,
+            id="daily-digest", max_instances=1, coalesce=True,
+        )
         self.scheduler.start()
         atexit.register(lambda: self.scheduler.shutdown(wait=False))
         self.scheduler.add_job(self.run, "date", id="startup", replace_existing=True)
@@ -115,6 +125,26 @@ class ScrapeScheduler:
                     f"{source_label} selected enrichment: {str(exc)[:900]}",
                 )
             return True
+        finally:
+            self.lock.release()
+
+
+    def send_digest(self):
+        db = self.app.extensions["db"]
+        self.acquire_action_lock(db)
+        try:
+            try:
+                result = send_daily_digest(
+                    db, self.app.config["DISPLAY_TIMEZONE"]
+                )
+                self.app.logger.info(
+                    "Daily digest %s (%s items)",
+                    result["status"], result["items"],
+                )
+                return result
+            except Exception:
+                self.app.logger.exception("Daily digest delivery failed")
+                return {"status": "error", "items": 0}
         finally:
             self.lock.release()
 

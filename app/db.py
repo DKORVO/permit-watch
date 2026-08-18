@@ -48,6 +48,11 @@ class Database:
               precision TEXT NOT NULL DEFAULT 'unknown',
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS digest_deliveries (
+              id INTEGER PRIMARY KEY,
+              sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              item_count INTEGER NOT NULL
+            );
             """)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
             if "metadata" not in columns:
@@ -258,6 +263,39 @@ class Database:
                 (cutoff,),
             )
             return cursor.rowcount
+
+
+    def latest_digest_sent_at(self):
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT MAX(sent_at) AS sent_at FROM digest_deliveries"
+            ).fetchone()
+        return row["sent_at"] if row else None
+
+    def new_digest_items(self, since):
+        """Return new matched procurement records plus all new Ottawa records."""
+        with self.connection() as conn:
+            return conn.execute(
+                """
+                SELECT id, source_name, title, url, created_at, enrichment
+                FROM items
+                WHERE created_at > ?
+                  AND lifecycle_status != 'closed'
+                  AND (
+                    relevant = 1
+                    OR LOWER(source_name) LIKE 'city of ottawa%'
+                  )
+                ORDER BY id ASC
+                """,
+                (since,),
+            ).fetchall()
+
+    def record_digest_delivery(self, item_count):
+        with self.connection() as conn:
+            conn.execute(
+                "INSERT INTO digest_deliveries(item_count) VALUES (?)",
+                (int(item_count),),
+            )
 
     def enrichment_budget(self, limit):
         """Return the current UTC-day request allowance used by OpenRouter."""

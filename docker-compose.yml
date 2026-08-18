@@ -12,6 +12,15 @@ services:
       SCRAPE_INTERVAL_MINUTES: ${SCRAPE_INTERVAL_MINUTES:-360}
       ENRICHMENT_DAILY_LIMIT: ${ENRICHMENT_DAILY_LIMIT:-100}
       CLOSED_RETENTION_DAYS: ${CLOSED_RETENTION_DAYS:-90}
+      DIGEST_HOUR: ${DIGEST_HOUR:-8}
+      DIGEST_MINUTE: ${DIGEST_MINUTE:-0}
+      DIGEST_EMAIL_TO: ${DIGEST_EMAIL_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       TZ: ${TZ:-America/Toronto}
     volumes:
       # Create this dataset/path first and place sources.json in it.
