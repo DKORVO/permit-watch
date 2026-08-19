@@ -98,6 +98,81 @@ def coordinates_for(city, province, source_name):
     return None
 
 
+def _metadata(item):
+    try:
+        return json.loads(item.get("metadata") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _location(metadata, source):
+    city = metadata.get("City", "")
+    province = metadata.get("Province", "")
+    if normalized(source).startswith("city of ottawa"):
+        city = city or "Ottawa"
+        province = province or "Ontario"
+    label = ", ".join(value for value in (city, province) if value)
+    if not label:
+        label = metadata.get("Location") or metadata.get("Addresses") or "Approximate location"
+    return city, province, label
+
+
+def _resolved_coordinates(metadata, city, province, source, coordinate_cache):
+    query = location_query(metadata, source)
+    cached = coordinate_cache.get(normalized(query)) if query else None
+    if cached and cached.get("latitude") is not None and cached.get("longitude") is not None:
+        return (
+            float(cached["latitude"]),
+            float(cached["longitude"]),
+            cached.get("precision") != "exact",
+        )
+    return coordinates_for(city, province, source)
+
+
+def _source_group(source):
+    source_key = normalized(source)
+    if source_key.startswith("city of ottawa"):
+        return "ottawa"
+    if source_key.startswith("canadabuys"):
+        return "canadabuys"
+    if source_key.startswith("seao"):
+        return "seao"
+    return "merx"
+
+
+def _finding(item, metadata, source):
+    return {
+        "title": item.get("title") or "Untitled finding",
+        "url": item.get("url") or "",
+        "closing": metadata.get("Closing Date", ""),
+        "source": source,
+        "relevant": int(bool(item.get("relevant"))),
+        "enrichment_status": item.get("enrichment_status") or "awaiting",
+    }
+
+
+def _add_to_group(groups, key, item, metadata, source, approximate):
+    latitude, longitude, source_group, location = key
+    group = groups.setdefault(
+        key,
+        {
+            "lat": latitude,
+            "lng": longitude,
+            "source_group": source_group,
+            "source": source,
+            "location": location,
+            "approximate": approximate,
+            "count": 0,
+            "matched_count": 0,
+            "items": [],
+        },
+    )
+    group["count"] += 1
+    group["matched_count"] += int(bool(item.get("relevant")))
+    if len(group["items"]) < 3000:
+        group["items"].append(_finding(item, metadata, source))
+
+
 def build_map_points(rows, coordinate_cache=None):
     """Group stored findings by mapped location and source."""
     groups = OrderedDict()
@@ -105,65 +180,16 @@ def build_map_points(rows, coordinate_cache=None):
     unknown = 0
     for row in rows:
         item = dict(row)
-        try:
-            metadata = json.loads(item.get("metadata") or "{}")
-        except (TypeError, json.JSONDecodeError):
-            metadata = {}
+        metadata = _metadata(item)
         source = item.get("source_name") or "Unknown source"
-        city = metadata.get("City", "")
-        province = metadata.get("Province", "")
-        if normalized(source).startswith("city of ottawa"):
-            city = city or "Ottawa"
-            province = province or "Ontario"
-        query = location_query(metadata, source)
-        cached = coordinate_cache.get(normalized(query)) if query else None
-        if cached and cached.get("latitude") is not None and cached.get("longitude") is not None:
-            resolved = (
-                float(cached["latitude"]),
-                float(cached["longitude"]),
-                cached.get("precision") != "exact",
-            )
-        else:
-            resolved = coordinates_for(city, province, source)
+        city, province, location = _location(metadata, source)
+        resolved = _resolved_coordinates(metadata, city, province, source, coordinate_cache)
         if not resolved:
             unknown += 1
             continue
         latitude, longitude, approximate = resolved
-        location = ", ".join(value for value in (city, province) if value)
-        if not location:
-            location = metadata.get("Location") or metadata.get("Addresses") or "Approximate location"
-        source_group = (
-            "ottawa" if normalized(source).startswith("city of ottawa")
-            else "canadabuys" if normalized(source).startswith("canadabuys")
-            else "seao" if normalized(source).startswith("seao")
-            else "merx"
-        )
+        source_group = _source_group(source)
         key = (latitude, longitude, source_group, location)
-        group = groups.setdefault(
-            key,
-            {
-                "lat": latitude,
-                "lng": longitude,
-                "source_group": source_group,
-                "source": source,
-                "location": location,
-                "approximate": approximate,
-                "count": 0,
-                "matched_count": 0,
-                "items": [],
-            },
-        )
-        group["count"] += 1
-        group["matched_count"] += int(bool(item.get("relevant")))
-        if len(group["items"]) < 3000:
-            group["items"].append(
-                {
-                    "title": item.get("title") or "Untitled finding",
-                    "url": item.get("url") or "",
-                    "closing": metadata.get("Closing Date", ""),
-                    "source": source,
-                    "relevant": int(bool(item.get("relevant"))),
-                    "enrichment_status": item.get("enrichment_status") or "awaiting",
-                }
-            )
+        _add_to_group(groups, key, item, metadata, source, approximate)
     return {"points": list(groups.values()), "unknown": unknown}
+
