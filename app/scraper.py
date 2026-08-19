@@ -637,6 +637,110 @@ def ottawa_detail_fields(session, key, application_number):
     }
 
 
+def _ottawa_record_data(record, type_map, wanted_types):
+    values = ottawa_properties(record)
+    application_type = first_value(
+        values, "application type", "applicationtype", "application type description", "type"
+    )
+    # City field labels vary across records/releases. Match against every
+    # public field, then retain the matched type for a readable title.
+    record_values = [display_value(value).lower() for value in values.values()]
+    resolved_types = [
+        type_map.get(value, OTTAWA_KNOWN_TYPE_CODES.get(value, "")) for value in record_values
+    ]
+    resolved_types = [item for item in resolved_types if item]
+    type_text = " ".join([*record_values, *resolved_types]).lower()
+    matched_type = next((wanted for wanted in wanted_types if wanted in type_text), "")
+    if wanted_types and not matched_type:
+        return None
+    fallback_type = resolved_types[0] if resolved_types else matched_type.title()
+    return values, application_type or fallback_type
+
+
+def _ottawa_detail_url(number):
+    if number:
+        return f"{OTTAWA_LANDING_PAGE}applications/{number}/details"
+    return OTTAWA_LANDING_PAGE
+
+
+def _ottawa_list_fields(values, application_type, number):
+    return {
+        "Application #": number,
+        "Application Status": first_value(
+            values, "application status", "application file status", "status"
+        ),
+        "Date Received": first_value(
+            values, "date received", "received date", "application received date", "application date"
+        ),
+        "Addresses": first_value(
+            values,
+            "addresses",
+            "address list",
+            "address",
+            "site address",
+            "municipal address",
+            "location",
+        ),
+        "Application": application_type,
+        "Review Status": first_value(
+            values, "review status", "application review status", "reviewstatus"
+        ),
+        "Status Date": first_value(values, "status date", "statusdate"),
+        "Description": first_value(
+            values, "description", "application description", "proposal description", "proposal"
+        ),
+        "File Lead": first_value(
+            values,
+            "file lead",
+            "filelead",
+            "file lead name",
+            "planner",
+            "planner name",
+            "case officer",
+            "lead",
+        ),
+        "File Lead Phone": first_value(
+            values, "file lead phone", "planner phone", "file lead telephone", "planner telephone"
+        ),
+    }
+
+
+def _fill_ottawa_detail(
+    fields, session, key, number, detail_url, known_addresses, lookup_available
+):
+    address_is_missing = not fields["Addresses"] or fields["Addresses"].startswith(
+        "Not provided by City of Ottawa"
+    )
+    if not (number and address_is_missing and lookup_available):
+        return False
+    try:
+        detail = ottawa_detail_fields(session, key, number)
+        fields.update({label: value for label, value in detail.items() if value})
+        if fields["Addresses"]:
+            known_addresses[detail_url] = fields["Addresses"]
+    except (requests.RequestException, ValueError) as exc:
+        # Leave the public list value in place if one detail record is
+        # temporarily unavailable; a later scheduled scrape can retry.
+        logger.warning("Ottawa detail lookup failed for %s: %s", number, exc)
+    return True
+
+
+def _ottawa_item(values, fields, number, application_type, detail_url):
+    published = first_value(values, "date received", "application date", "date submitted", "date")
+    details = "; ".join(
+        f"{label}: {display_value(value)}"
+        for label, value in values.items()
+        if value not in (None, "")
+    )
+    return {
+        "title": ottawa_title(number, fields["Addresses"], application_type),
+        "url": detail_url,
+        "published_text": published,
+        "excerpt": details[:4000],
+        "metadata": json.dumps(fields),
+    }
+
+
 def ottawa_items(source, session, db=None):
     key = find_ottawa_key(session)
     type_map = ottawa_type_map(session, key)
@@ -652,55 +756,27 @@ def ottawa_items(source, session, db=None):
     detail_lookups = 0
     known_addresses = db.resolved_addresses_by_url() if db else {}
     for record in records:
-        values = ottawa_properties(record)
-        application_type = first_value(values, "application type", "applicationtype", "application type description", "type")
-        # City field labels vary across records/releases. Match against every
-        # public field, then retain the matched type for a readable title.
-        record_values = [display_value(value).lower() for value in values.values()]
-        record_text = " ".join(record_values)
-        resolved_types = [type_map.get(value, OTTAWA_KNOWN_TYPE_CODES.get(value, "")) for value in record_values]
-        resolved_types = [item for item in resolved_types if item]
-        type_text = " ".join([record_text, *resolved_types]).lower()
-        matched_type = next((wanted for wanted in wanted_types if wanted in type_text), "")
-        if wanted_types and not matched_type:
+        item_data = _ottawa_record_data(record, type_map, wanted_types)
+        if not item_data:
             continue
-        application_type = application_type or (resolved_types[0] if resolved_types else matched_type.title())
+        values, application_type = item_data
         number = first_value(values, "application number", "applicationnumber", "file number", "filenumber")
-        address = first_value(values, "address", "site address", "municipal address", "location")
-        published = first_value(values, "date received", "application date", "date submitted", "date")
-        details = "; ".join(f"{key}: {display_value(value)}" for key, value in values.items() if value not in (None, ""))
-        detail_url = f"{OTTAWA_LANDING_PAGE}applications/{number}/details" if number else OTTAWA_LANDING_PAGE
-        fields = {
-            "Application #": number,
-            "Application Status": first_value(values, "application status", "application file status", "status"),
-            "Date Received": first_value(values, "date received", "received date", "application received date", "application date"),
-            "Addresses": first_value(values, "addresses", "address list", "address", "site address", "municipal address", "location"),
-            "Application": application_type,
-            "Review Status": first_value(values, "review status", "application review status", "reviewstatus"),
-            "Status Date": first_value(values, "status date", "statusdate"),
-            "Description": first_value(values, "description", "application description", "proposal description", "proposal"),
-            "File Lead": first_value(values, "file lead", "filelead", "file lead name", "planner", "planner name", "case officer", "lead"),
-            "File Lead Phone": first_value(values, "file lead phone", "planner phone", "file lead telephone", "planner telephone"),
-        }
-        if known_addresses.get(detail_url):
-            fields["Addresses"] = known_addresses[detail_url]
-        address_is_missing = not fields["Addresses"] or fields["Addresses"].startswith("Not provided by City of Ottawa")
-        if number and address_is_missing and detail_lookups < detail_lookup_limit:
-            try:
-                detail = ottawa_detail_fields(session, key, number)
-                for label, value in detail.items():
-                    if value:
-                        fields[label] = value
-                if fields["Addresses"]:
-                    known_addresses[detail_url] = fields["Addresses"]
-            except (requests.RequestException, ValueError) as exc:
-                # Leave the public list value in place if one detail record is
-                # temporarily unavailable; a later scheduled scrape can retry.
-                logger.warning("Ottawa detail lookup failed for %s: %s", number, exc)
+        detail_url = _ottawa_detail_url(number)
+        fields = _ottawa_list_fields(values, application_type, number)
+        fields["Addresses"] = known_addresses.get(detail_url) or fields["Addresses"]
+        attempted = _fill_ottawa_detail(
+            fields,
+            session,
+            key,
+            number,
+            detail_url,
+            known_addresses,
+            detail_lookups < detail_lookup_limit,
+        )
+        if attempted:
             detail_lookups += 1
             time.sleep(detail_interval)
-        title = ottawa_title(number, fields["Addresses"], application_type)
-        yield {"title": title, "url": detail_url, "published_text": published, "excerpt": details[:4000], "metadata": json.dumps(fields)}
+        yield _ottawa_item(values, fields, number, application_type, detail_url)
 
 
 def relevant(item, source):
@@ -868,4 +944,5 @@ def retry_failed_enrichments(db, enrich, limit, daily_limit=100):
         counts[status] += 1
         counts["retried"] += 1
     return counts
+
 

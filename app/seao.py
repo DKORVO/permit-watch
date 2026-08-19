@@ -35,6 +35,63 @@ def _resource_urls(source, session):
     return [resource["url"] for resource in resources[:limit]]
 
 
+def _active_release(release, seen):
+    tender = release.get("tender") or {}
+    identity = release.get("ocid") or tender.get("id")
+    is_active = (
+        "tender" in (release.get("tag") or [])
+        and tender.get("status") == "active"
+        and bool(identity)
+        and identity not in seen
+    )
+    return tender, identity if is_active else None
+
+
+def _tender_categories(tender):
+    values = []
+    for item in tender.get("items") or []:
+        classification = item.get("classification") or {}
+        values.extend([classification.get("description"), item.get("description")])
+    return list(dict.fromkeys(_text(value) for value in values if _text(value)))
+
+
+def _release_item(release, tender):
+    documents = tender.get("documents") or []
+    url = next(
+        (document.get("url") for document in documents if document.get("url")),
+        SEAO_SEARCH_URL,
+    )
+    buyer = _text((release.get("buyer") or {}).get("name"))
+    city, region = _buyer_address(release)
+    categories = _tender_categories(tender)
+    period = tender.get("tenderPeriod") or {}
+    metadata = {
+        "Organization": buyer,
+        "Notice Number": _text(tender.get("id")),
+        "Publication": _text(period.get("startDate") or release.get("date")),
+        "Closing Date": _text(period.get("endDate")),
+        "Procurement Method": _text(
+            tender.get("procurementMethodDetails") or tender.get("procurementMethod")
+        ),
+        "Category": ", ".join(categories),
+        "Province": "Quebec",
+        "City": city,
+        "Region": region,
+    }
+    metadata = {key: value for key, value in metadata.items() if value}
+    title = _text(tender.get("title")) or f"SEAO notice {tender.get('id', '')}".strip()
+    excerpt = _text(
+        " ".join([title, buyer, *categories, metadata.get("Procurement Method", "")])
+    )
+    return {
+        "title": title,
+        "url": url,
+        "published_text": metadata.get("Publication", ""),
+        "excerpt": excerpt[:4000],
+        "metadata": json.dumps(metadata, ensure_ascii=False),
+    }
+
+
 def seao_items(source, session):
     """Yield active SEAO notices from Quebec's official weekly open dataset."""
     seen = set()
@@ -42,51 +99,9 @@ def seao_items(source, session):
         response = session.get(resource_url, timeout=(10, 90))
         response.raise_for_status()
         for release in response.json().get("releases") or []:
-            tender = release.get("tender") or {}
-            identity = release.get("ocid") or tender.get("id")
-            if (
-                "tender" not in (release.get("tag") or [])
-                or tender.get("status") != "active"
-                or not identity
-                or identity in seen
-            ):
+            tender, identity = _active_release(release, seen)
+            if not identity:
                 continue
             seen.add(identity)
-            documents = tender.get("documents") or []
-            url = next(
-                (document.get("url") for document in documents if document.get("url")),
-                SEAO_SEARCH_URL,
-            )
-            buyer = _text((release.get("buyer") or {}).get("name"))
-            city, region = _buyer_address(release)
-            categories = []
-            for item in tender.get("items") or []:
-                classification = item.get("classification") or {}
-                categories.extend([classification.get("description"), item.get("description")])
-            categories = list(dict.fromkeys(_text(value) for value in categories if _text(value)))
-            period = tender.get("tenderPeriod") or {}
-            metadata = {
-                "Organization": buyer,
-                "Notice Number": _text(tender.get("id")),
-                "Publication": _text(period.get("startDate") or release.get("date")),
-                "Closing Date": _text(period.get("endDate")),
-                "Procurement Method": _text(
-                    tender.get("procurementMethodDetails") or tender.get("procurementMethod")
-                ),
-                "Category": ", ".join(categories),
-                "Province": "Quebec",
-                "City": city,
-                "Region": region,
-            }
-            metadata = {key: value for key, value in metadata.items() if value}
-            title = _text(tender.get("title")) or f"SEAO notice {tender.get('id', '')}".strip()
-            excerpt = _text(
-                " ".join([title, buyer, *categories, metadata.get("Procurement Method", "")])
-            )
-            yield {
-                "title": title,
-                "url": url,
-                "published_text": metadata.get("Publication", ""),
-                "excerpt": excerpt[:4000],
-                "metadata": json.dumps(metadata, ensure_ascii=False),
-            }
+            yield _release_item(release, tender)
+

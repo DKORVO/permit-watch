@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import requests
 
@@ -11,9 +11,43 @@ from app.scraper import (
     canadian_location_parts,
     load_sources,
     merx_page_url,
+    ottawa_items,
     physical_security_score,
     rescore_stored_security_items,
 )
+
+
+class OttawaCollectorTests(unittest.TestCase):
+    @patch("app.scraper.time.sleep")
+    @patch("app.scraper.ottawa_detail_fields")
+    @patch("app.scraper.ottawa_type_map", return_value={})
+    @patch("app.scraper.find_ottawa_key", return_value="public-key")
+    def test_missing_list_address_is_filled_from_public_detail(
+        self, _find_key, _type_map, detail_fields, _sleep
+    ):
+        response = Mock()
+        response.json.return_value = {
+            "features": [
+                {
+                    "properties": {
+                        "Application Type": "Site Plan Control",
+                        "Application Number": "D07-12-26-0001",
+                        "Address": "Not provided by City of Ottawa",
+                        "Date Received": "2026-08-18",
+                    }
+                }
+            ]
+        }
+        session = Mock()
+        session.get.return_value = response
+        detail_fields.return_value = {"Addresses": "110 Laurier Avenue West"}
+
+        items = list(ottawa_items({"detail_lookup_limit": 1}, session))
+
+        self.assertEqual(len(items), 1)
+        self.assertIn("110 Laurier Avenue West", items[0]["title"])
+        self.assertEqual(json.loads(items[0]["metadata"])["Addresses"], "110 Laurier Avenue West")
+        detail_fields.assert_called_once_with(session, "public-key", "D07-12-26-0001")
 
 
 class PhysicalSecurityScoreTests(unittest.TestCase):
@@ -224,3 +258,4 @@ class CanadaBuysOpenDataTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
